@@ -42,10 +42,10 @@ with st.form(key='form'):
 
         elif start_date > end_date:
             st.warning("Start date cannot be greater than start date")
-        
+
         st.write(
             f"Your portfolio consists for {len(symbols)} stocks and their symbols are *{symbols}*")
-        
+
         df = pd.DataFrame()
         for i in range(len(symbols)):
             data = get_history(symbol=symbols[i], start=start_date, end=(end_date))[
@@ -67,17 +67,17 @@ with st.form(key='form'):
             st.subheader("Closing price chart")
             history_chart = px.line(
                 df, x=df.index, y=df.columns, title="Portfolio Close Price History", labels={
-                    "x":"Date", "y":"Close Price INR (₨)"
+                    "x": "Date", "y": "Close Price INR (₨)"
                 })
 
-            st.plotly_chart(history_chart)
+            st.plotly_chart(history_chart, use_container_width=True)
 
             st.subheader("Correlation Matrix")
             st.write("""A Coefficient of correlation is a statistical measure of the relationship between two variables. It varies from -1 to 1, with 1 or -1 indicating perfect correlation. A correlation value close to 0 indicates no association between the variables. A correlation matrix is a table showing correlation coefficients between variables. Each cell in the table shows the correlation between two variables. The correlation matrix will tell us the strength of the relationship between the stocks in our portfolio, which essentially can be used for effective diversification.""")
             correlation_matrix = df.corr(method='pearson')
             correlation_heatmap = px.imshow(
                 correlation_matrix, title='Correlation between Stocks in your portfolio')
-            st.plotly_chart(correlation_heatmap)
+            st.plotly_chart(correlation_heatmap, use_container_width=True)
 
             st.subheader("Daily Simple Returns")
             st.write(
@@ -87,8 +87,8 @@ with st.form(key='form'):
             st.dataframe(daily_simple_return)
 
             daily_simple_return_plot = px.line(daily_simple_return, x=daily_simple_return.index,
-                                               y=daily_simple_return.columns, title="Volatility in Daily simple returns", labels={"x":"Date", "y":"Daily simple returns"})
-            st.plotly_chart(daily_simple_return_plot)
+                                               y=daily_simple_return.columns, title="Volatility in Daily simple returns", labels={"x": "Date", "y": "Daily simple returns"})
+            st.plotly_chart(daily_simple_return_plot, use_container_width=True)
 
             st.subheader("Average Daily returns")
             # print('Average Daily returns(%) of stocks in your portfolio')
@@ -97,9 +97,10 @@ with st.form(key='form'):
             daily_avg.columns = ["Ticker", "Average Daily returns"]
             st.dataframe(daily_avg)
 
-            daily_simple_return_boxplot = px.box(daily_simple_return, title="Risk Box Plot")
+            daily_simple_return_boxplot = px.box(
+                daily_simple_return, title="Risk Box Plot")
 
-            st.plotly_chart(daily_simple_return_boxplot)
+            st.plotly_chart(daily_simple_return_boxplot, use_container_width=True)
 
             st.subheader("Annualized Standard Deviation")
             st.write('Annualized Standard Deviation (Volatality(%), 252 trading days) of individual stocks in your portfolio on the basis of daily simple returns.')
@@ -114,9 +115,9 @@ with st.form(key='form'):
             daily_cummulative_simple_return = (daily_simple_return+1).cumprod()
             st.dataframe(daily_cummulative_simple_return)
             daily_cummulative_simple_return_plot = px.line(
-                daily_cummulative_simple_return, x=daily_cummulative_simple_return.index, y=daily_cummulative_simple_return.columns, title="Daily Cummulative Simple returns/growth of investment", labels={"x":"Date", "y":"Growth of ₨ 1 investment"})
+                daily_cummulative_simple_return, x=daily_cummulative_simple_return.index, y=daily_cummulative_simple_return.columns, title="Daily Cummulative Simple returns/growth of investment", labels={"x": "Date", "y": "Growth of ₨ 1 investment"})
 
-            st.plotly_chart(daily_cummulative_simple_return_plot)
+            st.plotly_chart(daily_cummulative_simple_return_plot, use_container_width=True)
             st.balloons()
 
 
@@ -135,4 +136,4 @@ hide_streamlit_style = """
             }
             </style>
             """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True) 
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
