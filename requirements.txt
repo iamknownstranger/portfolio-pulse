@@ -4,3 +4,4 @@ numpy
 pandas
 streamlit_tags
 streamlit
+pyportfolioopt
