@@ -1,11 +1,16 @@
-import streamlit as st
+
 import numpy as np
 import pandas as pd
+import streamlit as st
 from datetime import date, timedelta
 from streamlit_tags import st_tags
 import plotly.express as px
-from nsepy import get_history
 
+from nsepy import get_history
+from pypfopt.efficient_frontier import EfficientFrontier
+from pypfopt import  risk_models
+from pypfopt import expected_returns
+from pypfopt.discrete_allocation import DiscreteAllocation, get_latest_prices
 
 st.title('Portfolio Analyzer')
 
@@ -118,6 +123,37 @@ with st.form(key='form'):
                 daily_cummulative_simple_return, x=daily_cummulative_simple_return.index, y=daily_cummulative_simple_return.columns, title="Daily Cummulative Simple returns/growth of investment", labels={"x": "Date", "y": "Growth of ₨ 1 investment"})
 
             st.plotly_chart(daily_cummulative_simple_return_plot, use_container_width=True)
+
+                        
+            # calculating expected annual return and annualized sample covariance matrix of daily assets returns
+            mean = expected_returns.mean_historical_return(df)
+
+            sample_covariance_matrix = risk_models.sample_cov(df) # for sample covariance matrix
+            st.dataframe(sample_covariance_matrix)
+            sample_covariance_matrix_heatmap = px.imshow(sample_covariance_matrix, title="Sample Covariance Matrix")
+            st.plotly_chart(sample_covariance_matrix_heatmap, use_container_width=True)
+
+            ef = EfficientFrontier(mean,sample_covariance_matrix)
+            weights = ef.max_sharpe() #for maximizing the Sharpe ratio #Optimization
+            st.subheader("Sharpe ratio")
+            st.write(weights)
+            cleaned_weights = ef.clean_weights() #to clean the raw weights
+            # Get the Keys and store them in a list
+            labels = list(cleaned_weights.keys())
+            # Get the Values and store them in a list
+            values = list(cleaned_weights.values())
+
+            pie_chart = px.pie(df, values=values, names=labels, title='Portfolio Allocation')
+            st.plotly_chart(pie_chart, use_container_width=True)
+
+
+            st.subheader("Portfolio Performance")
+            mu, sigma, sharpe = ef.portfolio_performance()
+
+            st.write("Expected annual return: {:.1f}%".format(100 * mu))
+            st.write("Annual volatility: {:.1f}%".format(100 * sigma))
+            st.write("Sharpe Ratio: {:.2f}".format(sharpe))
+
             st.balloons()
 
 
