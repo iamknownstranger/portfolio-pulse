@@ -8,19 +8,21 @@ import plotly.express as px
 
 from nsepy import get_history
 from pypfopt.efficient_frontier import EfficientFrontier
-from pypfopt import  risk_models
+from pypfopt import risk_models
 from pypfopt import expected_returns
 from pypfopt.discrete_allocation import DiscreteAllocation, get_latest_prices
 
-st.title('Portfolio Analyzer')
+st.set_page_config(page_title="Portfolio Analyzer")
 
+
+st.title('Portfolio Analyzer')
 with st.form(key='form'):
 
     # TODO: Need to add in a feature inorder to validate a stock name
     symbols = st_tags(
         label='Enter the name or symbol of the stock in your portfolio to analyze',
         text='Press enter to add more',
-        value=["SBIN", "HDFCBANK", "ITC", "ASIANPAINT"],
+        value=["SBIN", "HDFCBANK", "ITC", "ASIANPAINT", "DIVISLAB"],
         suggestions=['CIPLA', 'BPCL', 'SUNPHARMA', 'JSWSTEEL', 'IOC', 'DRREDDY', 'POWERGRID', 'COALINDIA', 'ITC', 'TITAN', 'DIVISLAB', 'SHREECEM', 'GRASIM', 'ASIANPAINT', 'ONGC', 'BAJAJFINSV', 'SBIN', 'BAJFINANCE', 'HEROMOTOCO', 'SBILIFE', 'KOTAKBANK', 'HDFCBANK', 'ICICIBANK', 'TECHM', 'HCLTECH', 'BAJAJ-AUTO', 'RELIANCE', 'UPL', 'LT', 'INFY', 'HDFC', 'HINDUNILVR', 'EICHERMOT', 'WIPRO', 'TATAMOTORS', 'INDUSINDBK', 'BHARTIARTL', 'TCS', 'AXISBANK', 'ULTRACEMCO', 'HDFCLIFE', 'ADANIPORTS', 'M&M', 'BRITANNIA', 'TATASTEEL', 'NTPC', 'HINDALCO', 'TATACONSUM', 'MARUTI', 'NESTLEIND'])
 
     start_date_value = date.today() - timedelta(days=365)
@@ -47,9 +49,9 @@ with st.form(key='form'):
 
         elif start_date > end_date:
             st.warning("Start date cannot be greater than start date")
-
+        symbols_string = ", ".join(symbols)
         st.write(
-            f"Your portfolio consists for {len(symbols)} stocks and their symbols are *{symbols}*")
+            f"Your portfolio consists for {len(symbols)} stocks and their symbols are **{symbols_string}**")
 
         df = pd.DataFrame()
         for i in range(len(symbols)):
@@ -78,7 +80,7 @@ with st.form(key='form'):
             st.plotly_chart(history_chart, use_container_width=True)
 
             st.subheader("Correlation Matrix")
-            st.write("""A Coefficient of correlation is a statistical measure of the relationship between two variables. It varies from -1 to 1, with 1 or -1 indicating perfect correlation. A correlation value close to 0 indicates no association between the variables. A correlation matrix is a table showing correlation coefficients between variables. Each cell in the table shows the correlation between two variables. The correlation matrix will tell us the strength of the relationship between the stocks in our portfolio, which essentially can be used for effective diversification.""")
+            st.write("""A Coefficient of **correlation** is a statistical measure of the relationship between two variables. It varies from -1 to 1, with 1 or -1 indicating perfect correlation. A correlation value close to 0 indicates no association between the variables. A correlation matrix is a table showing correlation coefficients between variables. Each cell in the table shows the correlation between two variables. The correlation matrix will tell us the strength of the relationship between the stocks in our portfolio, which essentially can be used for effective diversification.""")
             correlation_matrix = df.corr(method='pearson')
             correlation_heatmap = px.imshow(
                 correlation_matrix, title='Correlation between Stocks in your portfolio')
@@ -86,13 +88,13 @@ with st.form(key='form'):
 
             st.subheader("Daily Simple Returns")
             st.write(
-                "Daily Simple Returns is essentially the percentage change in the Prices being calculated daily.")
+                "**Daily Simple Returns** is essentially the percentage change in the Prices being calculated daily.")
             daily_simple_return = df.pct_change(1)
             daily_simple_return.dropna(inplace=True)
             st.dataframe(daily_simple_return)
 
             daily_simple_return_plot = px.line(daily_simple_return, x=daily_simple_return.index,
-                                               y=daily_simple_return.columns, title="Volatility in Daily simple returns", labels={"x": "Date", "y": "Daily simple returns"})
+                                            y=daily_simple_return.columns, title="Volatility in Daily simple returns", labels={"x": "Date", "y": "Daily simple returns"})
             st.plotly_chart(daily_simple_return_plot, use_container_width=True)
 
             st.subheader("Average Daily returns")
@@ -105,10 +107,11 @@ with st.form(key='form'):
             daily_simple_return_boxplot = px.box(
                 daily_simple_return, title="Risk Box Plot")
 
-            st.plotly_chart(daily_simple_return_boxplot, use_container_width=True)
+            st.plotly_chart(daily_simple_return_boxplot,
+                            use_container_width=True)
 
             st.subheader("Annualized Standard Deviation")
-            st.write('Annualized Standard Deviation (Volatality(%), 252 trading days) of individual stocks in your portfolio on the basis of daily simple returns.')
+            st.write('**Annualized Standard Deviation** (Volatality(%), 252 trading days) of individual stocks in your portfolio on the basis of daily simple returns.')
             st.write(daily_simple_return.std() * np.sqrt(252) * 100)
 
             st.subheader("Return Per Unit Of Risk")
@@ -122,38 +125,58 @@ with st.form(key='form'):
             daily_cummulative_simple_return_plot = px.line(
                 daily_cummulative_simple_return, x=daily_cummulative_simple_return.index, y=daily_cummulative_simple_return.columns, title="Daily Cummulative Simple returns/growth of investment", labels={"x": "Date", "y": "Growth of ₨ 1 investment"})
 
-            st.plotly_chart(daily_cummulative_simple_return_plot, use_container_width=True)
+            st.plotly_chart(daily_cummulative_simple_return_plot,
+                            use_container_width=True)
+            st.subheader("Modern Portfolio Theory")
+            st.write("""
+            **Modern Portfolio Theory**, or MPT (also known as mean-variance analysis), is a mathematical framework for constructing a portfolio of assets to maximize expected return for a given level of market risk (Standard Deviation of Portfolio Returns). Since risk is associated with variability in profit, we can quantify it using measures of dispersion such as variance and standard deviation.
+            
+            > **The trade-off between Risk & return forms the basis of the portfolio construction**. 
 
-                        
+            It is imperative that the Higher the Risk, Higher will be the Return, So different investors will evaluate the trade-off differently based on individual risk aversion characteristics.
+            **It is possible to reduce risk while increasing the returns through efficient diversification**,, i.e., by combining negatively correlated assets. It is possible to construct an efficient set of portfolios that have the least risk for a given return or highest return for a given level of risk; investors can choose a point on this **efficient frontier** depending on their risk-return preferences. This process of constructing an efficient set of portfolios is labeled as portfolio optimization, which is quite a complex task mathematically.
+            The expected return of the portfolio is calculated as a weighted sum of the individual assets' returns. The Portfolio risk depends on the proportion (weights) invested in each security, their individual risks, and their correlation or covariance. These two terms are used interchangeably, but there lies a difference between the two,
+
+            - **Covariance** - The covariance can measure the extent to which two random variables vary together.
+            - **Correlation** - The problem with Covariance is that it's not standardized & to do so, we divide the Covariance between two variables by their standard deviation, which gives us the coefficient of correlation ranging from -1 to 1.
+            """)
+
+            st.write("""
+            An **Efficient Frontier** represents all possible portfolio combinations. It has the maximum return portfolio, consisting of a single asset with the highest return at the extreme right and the minimum variance portfolio on the extreme left. The returns represent the y-axis, while the level of risk lies on the x-axis.
+            """)
+            st.image("efficient_frontier.png")
+
             # calculating expected annual return and annualized sample covariance matrix of daily assets returns
             mean = expected_returns.mean_historical_return(df)
-
-            sample_covariance_matrix = risk_models.sample_cov(df) # for sample covariance matrix
+            st.subheader("Mean Historical Return")
+            st.write(mean)
+            st.subheader("Sample covariance matrix")
+            sample_covariance_matrix = risk_models.sample_cov(
+                df)  # for sample covariance matrix
             st.dataframe(sample_covariance_matrix)
-            sample_covariance_matrix_heatmap = px.imshow(sample_covariance_matrix, title="Sample Covariance Matrix")
-            st.plotly_chart(sample_covariance_matrix_heatmap, use_container_width=True)
+            sample_covariance_matrix_heatmap = px.imshow(
+                sample_covariance_matrix, title="Sample Covariance Matrix")
+            st.plotly_chart(sample_covariance_matrix_heatmap,
+                            use_container_width=True)
 
-            ef = EfficientFrontier(mean,sample_covariance_matrix)
-            weights = ef.max_sharpe() #for maximizing the Sharpe ratio #Optimization
+            ef = EfficientFrontier(mean, sample_covariance_matrix)
+            weights = ef.max_sharpe()  # for maximizing the Sharpe ratio #Optimization
             st.subheader("Sharpe ratio")
             st.write(weights)
-            cleaned_weights = ef.clean_weights() #to clean the raw weights
+            cleaned_weights = ef.clean_weights()  # to clean the raw weights
             # Get the Keys and store them in a list
             labels = list(cleaned_weights.keys())
             # Get the Values and store them in a list
             values = list(cleaned_weights.values())
 
-            pie_chart = px.pie(df, values=values, names=labels, title='Portfolio Allocation')
+            pie_chart = px.pie(df, values=values, names=labels,
+                            title='Optimized Portfolio Allocation')
             st.plotly_chart(pie_chart, use_container_width=True)
-
 
             st.subheader("Portfolio Performance")
             mu, sigma, sharpe = ef.portfolio_performance()
-
-            st.write("Expected annual return: {:.1f}%".format(100 * mu))
-            st.write("Annual volatility: {:.1f}%".format(100 * sigma))
-            st.write("Sharpe Ratio: {:.2f}".format(sharpe))
-
+            portfolio_performance_string = """Expected annual return: {:.1f}% \nAnnual volatility: {:.1f}% \nSharpe Ratio: {:.2f}""".format(100 * mu, 100 * sigma, sharpe)
+            st.text(portfolio_performance_string)
             st.balloons()
 
 
