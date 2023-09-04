@@ -1,0 +1,3 @@
+build-essential
+pkg-config
+libwebkit2gtk-4.0-37
