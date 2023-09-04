@@ -1,7 +1,7 @@
-nsepy
 plotly
 numpy
 pandas
 streamlit_tags
 streamlit
 pyportfolioopt
+openbb
