@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from openbb_terminal.sdk import openbb
+from openbb import obb
 from pypfopt import expected_returns, risk_models
 from pypfopt.discrete_allocation import DiscreteAllocation, get_latest_prices
 from pypfopt.efficient_frontier import EfficientFrontier
@@ -103,10 +103,11 @@ with st.form(key='form'):
 
         df = pd.DataFrame()
         for i in range(len(symbols)):
-            data = openbb.stocks.load(symbol=symbols[i], start_date=start_date, end_date=end_date)[
-                ['Close']]
+            response = obb.equity.price.historical(symbol=symbols[i], start_date=start_date, end_date=end_date, provider="yfinance")
+            data = response.to_dataframe()[['close']]
             if not data.empty:
-                data.rename(columns={'Close': symbols[i]}, inplace=True)
+                data.rename(columns={'close': symbols[i]}, inplace=True)
+                print(data)
                 if i == 0:
                     df = data
                 if i != 0:
