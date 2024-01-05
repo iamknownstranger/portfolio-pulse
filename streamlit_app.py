@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+import random
 
 import numpy as np
 import pandas as pd
@@ -12,16 +13,7 @@ from streamlit_tags import st_tags
 
 st.set_page_config(page_title="Portfolio Analyzer")
 
-
-st.title('Portfolio Analyzer')
-with st.form(key='form'):
-
-    # TODO: Need to add in a feature inorder to validate a stock name
-    symbols = st_tags(
-        label='Enter the name or symbol of the stock in your portfolio to analyze',
-        text='Press enter to add more',
-        value=["AAPL", "MSFT", "GOOGL", "AMZN", "META"],
-        suggestions = ["MMM", "ABT", "ABBV", "ABMD", "ACN", "ATVI", "ADBE", "AAP", "AMD", "AES",
+SP_500 = ["MMM", "ABT", "ABBV", "ABMD", "ACN", "ATVI", "ADBE", "AAP", "AMD", "AES",
             "AFL", "A", "APD", "AKAM", "ALK", "ALB", "ARE", "ALXN", "ALGN", "ALLE",
             "LNT", "ALL", "GOOGL", "GOOG", "MO", "AMZN", "AMCR", "AEE", "AAL", "AEP",
             "AXP", "AIG", "AMT", "AWK", "AMP", "ABC", "AME", "AMGN", "APH", "ADI", "ANSS",
@@ -71,7 +63,17 @@ with st.form(key='form'):
             "VMC", "WRB", "WAB", "WMT", "WBA", "DIS", "WM", "WAT", "WEC", "WFC",
             "WELL", "WST", "WDC", "WU", "WRK", "WY", "WHR", "WMB", "WLTW", "WYNN",
             "XEL", "XLNX", "XYL", "YUM", "ZBRA", "ZBH", "ZION", "ZTS"]
-            )
+
+st.title('Portfolio Analyzer')
+with st.form(key='form'):
+
+    # TODO: Need to add in a feature inorder to validate a stock name
+    symbols = st_tags(
+        label='Enter the name or symbol of the stock in your portfolio to analyze',
+        text='Press enter to add more',
+        value= random.sample(SP_500, 5),
+        suggestions = SP_500
+        )
 
     start_date_value = date.today() - timedelta(days=365)
     end_date_value = date.today()
