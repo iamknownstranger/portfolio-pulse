@@ -4,5 +4,4 @@ pandas
 streamlit_tags
 streamlit
 pyportfolioopt
-openbb
-openbb-yfinance
+yfinance
