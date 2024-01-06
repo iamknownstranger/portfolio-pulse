@@ -11,8 +11,6 @@ from pypfopt.discrete_allocation import DiscreteAllocation, get_latest_prices
 from pypfopt.efficient_frontier import EfficientFrontier
 from streamlit_tags import st_tags
 
-st.set_page_config(page_title="Portfolio Analyzer")
-
 SP_500 = ["MMM", "ABT", "ABBV", "ABMD", "ACN", "ATVI", "ADBE", "AAP", "AMD", "AES",
             "AFL", "A", "APD", "AKAM", "ALK", "ALB", "ARE", "ALXN", "ALGN", "ALLE",
             "LNT", "ALL", "GOOGL", "GOOG", "MO", "AMZN", "AMCR", "AEE", "AAL", "AEP",
@@ -64,6 +62,7 @@ SP_500 = ["MMM", "ABT", "ABBV", "ABMD", "ACN", "ATVI", "ADBE", "AAP", "AMD", "AE
             "WELL", "WST", "WDC", "WU", "WRK", "WY", "WHR", "WMB", "WLTW", "WYNN",
             "XEL", "XLNX", "XYL", "YUM", "ZBRA", "ZBH", "ZION", "ZTS"]
 
+st.set_page_config(page_title="Portfolio Analyzer")
 st.title('Portfolio Analyzer')
 with st.form(key='form'):
 
@@ -146,10 +145,9 @@ with st.form(key='form'):
             st.plotly_chart(daily_simple_return_plot, use_container_width=True)
 
             st.subheader("Average Daily returns")
-            # print('Average Daily returns(%) of stocks in your portfolio')
             daily_avg = daily_simple_return.mean()
             daily_avg = daily_avg*100
-            daily_avg.columns = ["Ticker", "Average Daily returns"]
+            daily_avg.name = "Average Daily returns"
             st.dataframe(daily_avg)
 
             daily_simple_return_boxplot = px.box(
@@ -160,12 +158,15 @@ with st.form(key='form'):
 
             st.subheader("Annualized Standard Deviation")
             st.write('**Annualized Standard Deviation** (Volatality(%), 252 trading days) of individual stocks in your portfolio on the basis of daily simple returns.')
-            st.write(daily_simple_return.std() * np.sqrt(252) * 100)
+            annual_std = daily_simple_return.std() * np.sqrt(252) * 100
+            annual_std.name = "Annualized Standard Deviation"
+            st.write(annual_std)
 
             st.subheader("Return Per Unit Of Risk")
             st.write("""The higher this ratio, the better it is. After adjusting for a risk-free rate, this ratio is also called Sharpe Ratio, a measure of risk-adjusted return. It describes how much excess return you receive for the volatility of holding a riskier asset.""")
             return_per_unit_risk = daily_avg / \
                 (daily_simple_return.std() * np.sqrt(252)) * 100
+            return_per_unit_risk.name = "Return Per Unit Of Risk"
             st.dataframe(return_per_unit_risk)
             st.subheader("Cumulative Returns")
             daily_cummulative_simple_return = (daily_simple_return+1).cumprod()
@@ -196,6 +197,7 @@ with st.form(key='form'):
 
             # calculating expected annual return and annualized sample covariance matrix of daily assets returns
             mean = expected_returns.mean_historical_return(df)
+            mean.name = "Mean Historical Return"
             st.subheader("Mean Historical Return")
             st.write(mean)
             st.subheader("Sample covariance matrix")
