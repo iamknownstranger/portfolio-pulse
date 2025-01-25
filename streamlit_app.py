@@ -104,13 +104,15 @@ with st.form(key='form'):
 
         df = pd.DataFrame()
         for i in range(len(symbols)):
-            data = yf.download(symbols[i], start=start_date, end=end_date)[['Close']]
+            data = yf.download(symbols[i], start=start_date, end=end_date, multi_level_index=False)[['Close']]
             if not data.empty:
                 data = data.rename(columns={'Close': symbols[i]})
-                if i == 0:
+                st.dataframe(data)
+                if df.empty:
                     df = data
-                if i != 0:
-                    df = df.join(data)
+                else:
+                    df = pd.concat([df, data], axis=1)
+                st.dataframe(df)
             else:
                 st.warning(f"Invalid stock symbol: {symbols[i]}")
 
@@ -119,6 +121,8 @@ with st.form(key='form'):
             st.subheader("Historical close price data")
             st.dataframe(df)
             st.subheader("Closing price chart")
+            df = df.reset_index()
+            df = df.set_index('Date')
             history_chart = px.line(
                 df, x=df.index, y=df.columns, title="Portfolio Close Price History", labels={
                     "x": "Date", "y": "Close Price INR (₨)"
