@@ -104,13 +104,13 @@ with st.form(key='form'):
 
         df = pd.DataFrame()
         for i in range(len(symbols)):
-            data = yf.download(symbols[i], start=start_date, end=end_date)[['Close']]
+            data = yf.download(symbols[i], start=start_date, end=end_date, multi_level_index=False)[['Close']]
             if not data.empty:
                 data = data.rename(columns={'Close': symbols[i]})
-                if i == 0:
+                if df.empty:
                     df = data
-                if i != 0:
-                    df = df.join(data)
+                else:
+                    df = pd.concat([df, data], axis=1)
             else:
                 st.warning(f"Invalid stock symbol: {symbols[i]}")
 
