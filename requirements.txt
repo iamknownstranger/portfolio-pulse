@@ -6,3 +6,5 @@ streamlit
 pyportfolioopt
 yfinance
 scikit-learn
+duckdb
+polars
