@@ -8,3 +8,4 @@ yfinance
 scikit-learn
 duckdb
 polars
+statsmodels
