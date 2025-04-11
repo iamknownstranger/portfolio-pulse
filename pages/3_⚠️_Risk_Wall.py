@@ -14,31 +14,33 @@ symbols, start_date, end_date, period = render_sidebar()
 @st.cache_data(ttl=86400)
 def get_data(tickers, start, end):
     try:
-        tickers = tickers + ['BLL']
-        # Attempt to download data for all tickers at once
-        df = yf.download(tickers, start=start, end=end, auto_adjust=False, multi_level_index=False)["Close"]
-        df.index = df.index.date
-        df = df.dropna(axis=1, how='all')
-        return df.replace(to_replace='None', value=np.nan).dropna(axis=0, how="all")
+        # Attempt to fetch data from DuckDB
+        query = f"""
+        SELECT date, symbol, close_price FROM market_data
+        WHERE symbol IN ({', '.join([f'\'{ticker}\'' for ticker in tickers])})
+        AND date BETWEEN '{start}' AND '{end}'
+        ORDER BY date;
+        """
+        df_duckdb = pd.DataFrame(con.execute(query).fetchall(), columns=['date', 'symbol', 'close_price'])
+        if not df_duckdb.empty:
+            df_duckdb = df_duckdb.pivot(index='date', columns='symbol', values='close_price')
+            return df_duckdb
     except Exception as e:
-        dfs = []
-        # Loop over tickers individually to identify the ones that fail.
-        for ticker in tickers:
-            try:
-                df_ticker = yf.download(ticker, start=start, end=end, auto_adjust=False, multi_level_index=False)["Close"]
-                df_ticker.index = df_ticker.index.date
-                dfs.append(df_ticker.rename(ticker))
-            except Exception as e_indiv:
-                st.error(f"Error for {ticker}: {e_indiv}")
-        if dfs:
-            combined = pd.concat(dfs, axis=1)
-            return combined.replace(to_replace='None', value=np.nan).dropna(axis=0, how="all")
+        st.warning(f"DuckDB data fetch failed: {e}. Falling back to yfinance.")
+
+    # Fallback to yfinance if DuckDB fails
+    try:
+        df_yf = yf.download(tickers, start=start, end=end, auto_adjust=False, multi_level_index=False)["Close"]
+        df_yf.index = df_yf.index.date
+        return df_yf.dropna(axis=1, how='all')
+    except Exception as e:
+        st.error(f"Error fetching data from yfinance: {e}")
         return pd.DataFrame()
 
 df = get_data(symbols, start_date, end_date)
 
 # Load actual data
-df_companies = pd.read_csv("/home/ubuntu/portfolio-pulse/data/companiesmarketcap.com - Largest American companies by market capitalization.csv")
+df_companies = pd.read_csv("data/companiesmarketcap.com - Largest American companies by market capitalization.csv")
 df_companies["marketcap"] = pd.to_numeric(df_companies["marketcap"], errors='coerce')
 df_companies["price (INR)"] = pd.to_numeric(df_companies["price (INR)"], errors='coerce')
 
