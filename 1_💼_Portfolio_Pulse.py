@@ -72,7 +72,7 @@ if 'default_symbols' not in st.session_state:
     st.session_state.default_symbols = random.sample(SP_500, 5)
 
 # Render the common sidebar filters
-symbols, start_date, end_date = render_sidebar()
+symbols, start_date, end_date, period = render_sidebar()
 
 if not start_date:
     start_date = date.today() - timedelta(days=3*365)
@@ -242,26 +242,3 @@ if not df.empty:
 
     st.subheader("📈 Cumulative Returns (Portfolio)")
     st.line_chart(portfolio_cum)
-
-st.sidebar.markdown("---")    
-st.sidebar.markdown("""
-    <style>
-      /* Ensure the sidebar uses full viewport height */
-      .css-1d391kg, .sidebar .sidebar-content { 
-          display: flex; 
-          flex-direction: column; 
-          height: 100vh; 
-      }
-      /* Let the main content grow, forcing the footer to the bottom */
-      .css-1d391kg > div:nth-child(2), .sidebar .sidebar-content > div:first-child { 
-          flex: 1;
-      }
-      .sidebar-footer {
-          text-align: center;
-          padding: 10px;
-          font-size: 0.9rem;
-          color: #888;
-      }
-    </style>
-""", unsafe_allow_html=True)
-st.sidebar.markdown('<div class="sidebar-footer">Built with 💓 by Chandra Sekhar Mullu</div>', unsafe_allow_html=True)

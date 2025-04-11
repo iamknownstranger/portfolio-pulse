@@ -68,30 +68,12 @@ def fetch_data(con, start_date, end_date, symbols_filter=None):
 # === App Layout ===
 st.set_page_config(page_title="Index Insights", page_icon="📈", layout="wide")
 st.title("📊 Index Insights")
-symbols, start_date, end_date = render_sidebar()
+symbols, start_date, end_date, period = render_sidebar()
+
 
 # Move DB connection and max_date definition before filters
 max_date = con.execute("SELECT MAX(date) FROM market_cap_data").fetchone()[0]
 INCEPTION_DATE = con.execute("SELECT min(date) FROM market_cap_data").fetchone()[0]
-
-with st.sidebar.form('index_insights_form'):
-    selected_date = st.date_input("Select a date:", max_value=max_date)
-    period = st.radio(
-        "Period", ["WTD", "MTD", "YTD", "ITD", "Custom"], horizontal=True, index=3)
-    if period == "Custom":
-        custom_start_date = st.date_input(
-            "Custom Start Date", value=max_date - timedelta(days=30), max_value=max_date)
-        custom_end_date = st.date_input(
-            "Custom End Date", value=max_date, min_value=custom_start_date, max_value=max_date)
-    analyze_button = st.form_submit_button('Analyze')
-
-selected_date_ts = pd.to_datetime(selected_date)
-
-if period == "Custom":
-    start_date, end_date = pd.to_datetime(
-        custom_start_date), pd.to_datetime(custom_end_date)
-else:
-    start_date, end_date = get_date_range(period, selected_date_ts)
 
 data = fetch_data(con, start_date, end_date, symbols_filter=symbols)
 
@@ -102,7 +84,7 @@ df_composition_changes = detect_composition_changes(data)
 df_index_pd = df_index.to_pandas().sort_values("date")
 df_index_pd["daily_pct_change"] = df_index_pd["index_value"].pct_change()
 
-month_mask = (df_index_pd["date"] >= (pd.to_datetime(selected_date) - timedelta(days=365*3))) & (df_index_pd["date"] <= pd.to_datetime(selected_date))
+month_mask = (df_index_pd["date"] >= (pd.to_datetime(end_date) - timedelta(days=365*3))) & (df_index_pd["date"] <= pd.to_datetime(end_date))
 df_index_month = df_index_pd[month_mask]
 
 cumulative_return = (df_index_month["index_value"].iloc[-1] / df_index_month["index_value"].iloc[0] - 1) * 100 if not df_index_month.empty else 0.0
@@ -218,12 +200,12 @@ selected_row = df_composition_changes.selection.rows
 st.subheader("🧱 Stock Weights Heatmap")
 if selected_row:
     selected_row_index = selected_row[0]
-    selected_date = df_composition_changes_pd.iloc[selected_row_index]["date"]
+    end_date = df_composition_changes_pd.iloc[selected_row_index]["date"]
 else:
-    selected_date = df_composition_changes_pd["date"].max()
+    end_date = df_composition_changes_pd["date"].max()
 
 selected_comp = df_composition_changes_pd[
-    df_composition_changes_pd["date"] == selected_date]
+    df_composition_changes_pd["date"] == end_date]
 
 selected_comp = selected_comp.dropna()
 if not selected_comp.empty:
@@ -243,7 +225,7 @@ if not selected_comp.empty:
         margin=dict(t=50, b=80),
         annotations=[
             dict(
-                text=f"<b>Index Market Cap Composition for {selected_date}</b>",
+                text=f"<b>Index Market Cap Composition for {end_date}</b>",
                 showarrow=False,
                 xref="paper", yref="paper",
                 x=0.5, y=-0.025,
@@ -257,6 +239,18 @@ if not selected_comp.empty:
 else:
     st.warning("No valid data available for treemap. Please check the selected date.")
 
-st.sidebar.markdown("---")
-st.sidebar.markdown(
-    '<div class="sidebar-footer">Built with 💓 by Chandra Sekhar Mullu</div>', unsafe_allow_html=True)
+# === Portfolio vs Index Composition Comparison ===
+st.subheader("📊 Portfolio vs Index Composition Comparison")
+# Get latest top 100 symbols from composition changes (using the latest date)
+latest_date = df_composition_changes_pd["date"].max()
+latest_row = df_composition_changes_pd[df_composition_changes_pd["date"] == latest_date]
+if not latest_row.empty:
+    top100_symbols = latest_row["top_100_symbols"].iloc[0]
+    portfolio_set = set(symbols)
+    index_set = set(top100_symbols)
+    common_count = len(portfolio_set.intersection(index_set))
+    coverage_ratio = (common_count / len(portfolio_set) * 100) if portfolio_set else 0
+    st.metric("Portfolio Coverage in Index", f"{coverage_ratio:.2f}%")
+    st.write(f"Your portfolio of {len(portfolio_set)} stocks overlaps with {common_count} stocks from the top 100 index.")
+else:
+    st.warning("No composition data available for portfolio comparison.")

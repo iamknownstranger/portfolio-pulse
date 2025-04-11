@@ -8,10 +8,10 @@ from common.sidebar import render_sidebar
 st.set_page_config(page_title="Performance Analytics", page_icon="📊", layout="wide")
 st.title("📊 Performance Analytics")
 
-symbols, start_date, end_date = render_sidebar()
+symbols, start_date, end_date, period = render_sidebar()
 
 # Load actual data
-df_companies = pd.read_csv("/home/ubuntu/portfolio-pulse/data/companiesmarketcap.com - Largest American companies by market capitalization.csv")
+df_companies = pd.read_csv("data/companiesmarketcap.com - Largest American companies by market capitalization.csv")
 df_companies["marketcap"] = pd.to_numeric(df_companies["marketcap"], errors='coerce')
 
 # FILTER by symbols

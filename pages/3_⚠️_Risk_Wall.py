@@ -9,7 +9,7 @@ import yfinance as yf
 st.set_page_config(page_title="Risk Wall", page_icon="⚠️", layout="wide")
 st.title("⚠️ Risk Wall")
 
-symbols, start_date, end_date = render_sidebar()
+symbols, start_date, end_date, period = render_sidebar()
 
 @st.cache_data(ttl=86400)
 def get_data(tickers, start, end):

@@ -8,11 +8,11 @@ from common.sidebar import render_sidebar
 st.set_page_config(page_title="Holdings & Exposure", page_icon="📋", layout="wide")
 st.title("📋 Holdings & Exposure")
 
-symbols, start_date, end_date = render_sidebar()
+symbols, start_date, end_date, period = render_sidebar()
 
 
 # Load actual holdings data from CSV
-df_holdings = pd.read_csv("/home/ubuntu/portfolio-pulse/data/companiesmarketcap.com - Largest American companies by market capitalization.csv")
+df_holdings = pd.read_csv("data/companiesmarketcap.com - Largest American companies by market capitalization.csv")
 df_holdings["marketcap"] = pd.to_numeric(df_holdings["marketcap"], errors='coerce')
 
 # FILTER by symbols if available

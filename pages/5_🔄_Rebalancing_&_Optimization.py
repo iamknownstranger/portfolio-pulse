@@ -7,10 +7,10 @@ from common.sidebar import render_sidebar
 st.set_page_config(page_title="Rebalancing & Optimization", page_icon="🔄", layout="wide")
 st.title("🔄 Rebalancing & Optimization")
 
-symbols, start_date, end_date = render_sidebar()
+symbols, start_date, end_date, period = render_sidebar()
 
 # Load actual data
-df_companies = pd.read_csv("/home/ubuntu/portfolio-pulse/data/companiesmarketcap.com - Largest American companies by market capitalization.csv")
+df_companies = pd.read_csv("data/companiesmarketcap.com - Largest American companies by market capitalization.csv")
 df_companies["marketcap"] = pd.to_numeric(df_companies["marketcap"], errors='coerce')
 
 # FILTER by sidebar selection if available
