@@ -27,6 +27,10 @@ COMMODITIES = {
 # Add DXY for correlation
 DXY_TICKER = "DX-Y.NYB"
 
+if 'commodities_analytics_submitted' not in st.session_state:
+    st.session_state['commodities_analytics_submitted'] = False
+
+# Sidebar form
 with st.sidebar:
     st.header("Commodities Selection")
     selected_commodities = st.multiselect(
@@ -37,16 +41,12 @@ with st.sidebar:
     start_date = st.date_input("Start date", value=date.today() - timedelta(days=3*365))
     end_date = st.date_input("End date", value=date.today())
     analyze_button = st.button("Analyze")
+    if analyze_button:
+        st.session_state['commodities_analytics_submitted'] = True
 
-st.markdown("""
-<style>
-.metric-label { font-size: 1.1em; color: #888; }
-.metric-value { font-size: 1.5em; font-weight: bold; }
-.section-title { font-size: 1.3em; font-weight: bold; margin-top: 2em; }
-</style>
-""", unsafe_allow_html=True)
-
-if analyze_button and selected_commodities:
+# Run analytics if the button is clicked or on first load
+if (st.session_state['commodities_analytics_submitted'] or not st.session_state.get('commodities_analytics_loaded_once', False)) and selected_commodities:
+    st.session_state['commodities_analytics_loaded_once'] = True
     tickers = [COMMODITIES[c] for c in selected_commodities]
     df = yf.download(tickers, start=start_date, end=end_date)["Close"]
     if isinstance(df, pd.Series):
@@ -178,3 +178,5 @@ if analyze_button and selected_commodities:
         st.line_chart(rolling_corr, height=100)
         st.caption("60-day rolling correlation with DXY (USD Index)")
         st.markdown("---")
+else:
+    st.info("Select commodities and click Analyze to view analytics.")
