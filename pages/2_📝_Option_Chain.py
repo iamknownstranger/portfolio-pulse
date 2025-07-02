@@ -5,6 +5,7 @@ import yfinance as yf
 import requests
 import time
 from datetime import datetime, timedelta
+from retry import retry
 
 st.set_page_config(layout="wide")
 st.title("Index Option Chain Analysis")
@@ -24,39 +25,38 @@ HEADERS = {
 
 # --- Functions ---
 @st.cache_data(ttl=300)
+@retry((requests.exceptions.RequestException, Exception), tries=3, delay=5, backoff=2)
 def fetch_option_chain(symbol, max_retries=3, retry_delay=5):
     url = OPTION_CHAIN_URL_TEMPLATE.format(symbol=symbol)
     session = requests.Session()
-    for attempt in range(max_retries):
-        try:
-            session.get("https://www.nseindia.com", headers=HEADERS, timeout=10)
-            response = session.get(url, headers=HEADERS, timeout=10)
-            if response.status_code == 429:
-                if attempt < max_retries - 1:
-                    st.warning(f"Rate limited by NSE (429). Retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    st.error("Too Many Requests. Rate limited. Please try after a while.")
-                    return None, []
-            if response.status_code != 200:
-                st.error(f"Failed to fetch data from NSE. Status code: {response.status_code}")
-                return None, []
-            try:
-                data = response.json()
-            except Exception:
-                st.error("Failed to parse option chain data. The NSE website may be blocking requests or is temporarily unavailable.")
-                return None, []
-            records = data.get('records', {}).get('data', [])
-            expiry_dates = data.get('records', {}).get('expiryDates', [])
-            return records, expiry_dates
-        except Exception as e:
-            if attempt < max_retries - 1:
-                st.warning(f"Error fetching option chain: {e}. Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-            else:
-                st.error(f"Error fetching option chain: {e}")
-                return None, []
+    session.get("https://www.nseindia.com", headers=HEADERS, timeout=10)
+    response = session.get(url, headers=HEADERS, timeout=10)
+    if response.status_code == 429:
+        # Only show warning on first try
+        if not hasattr(fetch_option_chain, '_retrying'):
+            st.warning(f"Rate limited by NSE (429). Retrying in {retry_delay} seconds...")
+            fetch_option_chain._retrying = True
+        raise requests.exceptions.RequestException("429 Too Many Requests")
+    if response.status_code == 401:
+        if not hasattr(fetch_option_chain, '_retrying'):
+            st.warning(f"Unauthorized (401) from NSE. Retrying in {retry_delay} seconds...")
+            fetch_option_chain._retrying = True
+        raise requests.exceptions.RequestException("401 Unauthorized")
+    # Clear the retrying flag if successful
+    if hasattr(fetch_option_chain, '_retrying'):
+        del fetch_option_chain._retrying
+    if response.status_code != 200:
+        st.error(f"Failed to fetch data from NSE. Status code: {response.status_code}")
+        return None, []
+    try:
+        data = response.json()
+    except Exception:
+        st.error("Failed to parse option chain data. The NSE website may be blocking requests or is temporarily unavailable.")
+        return None, []
+    records = data.get('records', {}).get('data', [])
+    expiry_dates = data.get('records', {}).get('expiryDates', [])
+    return records, expiry_dates
+ 
 
 
 def process_option_chain(records, selected_expiry):
@@ -219,7 +219,7 @@ def highlight_iv_spike(df):
 # --- Main Logic ---
 st.markdown("This dashboard helps you track how this week's index options are positioned, giving you insights for next week's trades.")
 
-col_sel1, col_sel2, col_sel3 = st.columns([1, 2, 2])
+col_sel1, col_sel2, col_sel3 = st.columns([1, 2, 2], vertical_alignment="center")
 with col_sel1:
     selected_index = st.selectbox("Select Index", list(INDEX_SYMBOLS.keys()), index=0)
 with col_sel2:
