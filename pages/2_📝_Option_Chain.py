@@ -4,13 +4,42 @@ import plotly.graph_objects as go
 import yfinance as yf
 import requests
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
+import numpy as np
+from scipy.stats import norm
+import random
 from retry import retry
 
-st.set_page_config(layout="wide")
-st.title("Index Option Chain Analysis")
+# --- PAGE CONFIGURATION ---
+st.set_page_config(
+    page_title="Option Chain Analysis",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# --- Constants ---
+# --- CUSTOM STYLING ---
+st.markdown("""
+<style>
+    .success-message {
+        background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724;
+        padding: 0.75rem 1.25rem; border-radius: 0.25rem; margin-bottom: 1rem;
+    }
+    .metric-card {
+        background-color: #f8f9fa; padding: 1rem; border-radius: 0.5rem; text-align: center;
+    }
+    .stButton>button {
+        width: 100%;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- SESSION STATE INITIALIZATION ---
+if 'error_messages' not in st.session_state:
+    st.session_state.error_messages = []
+if 'data_loaded' not in st.session_state:
+    st.session_state.data_loaded = False
+
+# --- CONSTANTS ---
 INDEX_SYMBOLS = {
     "NIFTY": "NIFTY",
     "BANKNIFTY": "BANKNIFTY",
@@ -18,349 +47,409 @@ INDEX_SYMBOLS = {
     "MIDCPNIFTY": "MIDCPNIFTY",
     "SENSEX": "SENSEX"
 }
-OPTION_CHAIN_URL_TEMPLATE = "https://www.nseindia.com/api/option-chain-indices?symbol={symbol}"
+RISK_FREE_RATE = 0.07  # Assumed risk-free rate for India (7%)
 HEADERS = {
-    "User-Agent": "Mozilla/5.0"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1"
 }
 
-# --- Functions ---
-@st.cache_data(ttl=300)
-@retry((requests.exceptions.RequestException, Exception), tries=3, delay=5, backoff=2)
-def fetch_option_chain(symbol, max_retries=3, retry_delay=5):
-    url = OPTION_CHAIN_URL_TEMPLATE.format(symbol=symbol)
-    session = requests.Session()
-    session.get("https://www.nseindia.com", headers=HEADERS, timeout=10)
-    response = session.get(url, headers=HEADERS, timeout=10)
-    if response.status_code == 429:
-        # Only show warning on first try
-        if not hasattr(fetch_option_chain, '_retrying'):
-            st.warning(f"Rate limited by NSE (429). Retrying in {retry_delay} seconds...")
-            fetch_option_chain._retrying = True
-        raise requests.exceptions.RequestException("429 Too Many Requests")
-    if response.status_code == 401:
-        if not hasattr(fetch_option_chain, '_retrying'):
-            st.warning(f"Unauthorized (401) from NSE. Retrying in {retry_delay} seconds...")
-            fetch_option_chain._retrying = True
-        raise requests.exceptions.RequestException("401 Unauthorized")
-    # Clear the retrying flag if successful
-    if hasattr(fetch_option_chain, '_retrying'):
-        del fetch_option_chain._retrying
-    if response.status_code != 200:
-        st.error(f"Failed to fetch data from NSE. Status code: {response.status_code}")
-        return None, []
+# --- CORE DATA FETCHING & PROCESSING ---
+
+@st.cache_data(ttl=60)
+def get_current_price(symbol):
+    """Fetches the current price of an index using yfinance."""
+    ticker_map = {
+        "NIFTY": "^NSEI", "BANKNIFTY": "^NSEBANK",
+        "SENSEX": "^BSESN", "FINNIFTY": "NIFTY_FIN_SERVICE.NS",
+    }
+    ticker = ticker_map.get(symbol)
+    if not ticker: return None
     try:
-        data = response.json()
+        stock = yf.Ticker(ticker)
+        data = stock.history(period="1d", interval="1m")
+        return data['Close'].iloc[-1] if not data.empty else None
     except Exception:
-        st.error("Failed to parse option chain data. The NSE website may be blocking requests or is temporarily unavailable.")
-        return None, []
-    records = data.get('records', {}).get('data', [])
-    expiry_dates = data.get('records', {}).get('expiryDates', [])
-    return records, expiry_dates
- 
+        return None
 
+@st.cache_data(ttl=300)
+@retry(requests.exceptions.RequestException, tries=3, delay=2, backoff=2)
+def fetch_nse_option_chain(symbol):
+    """Fetches option chain data from NSE's API with robust error handling and proper session priming."""
+    url = f"https://www.nseindia.com/api/option-chain-indices?symbol={symbol}"
+    try:
+        session = requests.Session()
+        # Set all required headers
+        session.headers.update(HEADERS)
+        session.headers.update({
+            "Referer": "https://www.nseindia.com/option-chain",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
+        # Prime the session and get cookies
+        home = session.get("https://www.nseindia.com", timeout=10)
+        time.sleep(random.uniform(1, 2))
+        # Now request the option chain
+        response = session.get(url, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        st.session_state.data_loaded = True
+        st.session_state.error_messages = []
+        return data.get('records', {}), data.get('filtered', {})
+    except requests.exceptions.RequestException as e:
+        st.session_state.data_loaded = False
+        st.session_state.error_messages.append(f"NSE API Error: {e}")
+        return None, None
 
-def process_option_chain(records, selected_expiry):
-    calls, puts = [], []
+def get_expiry_types(expiry_dates):
+    """Identifies and sorts weekly and monthly expiry dates."""
+    weekly, monthly = [], []
+    today = pd.Timestamp.now().normalize()
+    for d_str in expiry_dates:
+        try:
+            dt = pd.to_datetime(d_str, format='%d-%b-%Y')
+            # Check if it's the last Thursday of its month for monthly expiry
+            last_day_of_month = dt + pd.offsets.MonthEnd(0)
+            last_thursday = last_day_of_month - pd.DateOffset(days=(last_day_of_month.weekday() - 3) % 7)
+            if dt == last_thursday:
+                monthly.append(d_str)
+            else:
+                weekly.append(d_str)
+        except ValueError:
+            continue
+    return sorted(weekly, key=lambda d: datetime.strptime(d, '%d-%b-%Y')), \
+           sorted(monthly, key=lambda d: datetime.strptime(d, '%d-%b-%Y'))
+
+def calculate_greeks(S, K, T, r, iv, option_type='call'):
+    """Calculates option Greeks using the Black-Scholes model."""
+    if T <= 0 or iv <= 0:
+        return {'delta': 0, 'gamma': 0, 'theta': 0, 'vega': 0}
+    d1 = (np.log(S / K) + (r + 0.5 * iv ** 2) * T) / (iv * np.sqrt(T))
+    d2 = d1 - iv * np.sqrt(T)
+    pdf_d1 = norm.pdf(d1)
+    
+    vega = S * pdf_d1 * np.sqrt(T) / 100  # Vega per 1% change in IV
+
+    if option_type == 'call':
+        delta = norm.cdf(d1)
+        theta = (- (S * pdf_d1 * iv) / (2 * np.sqrt(T)) - r * K * np.exp(-r * T) * norm.cdf(d2)) / 365
+    else: # put
+        delta = norm.cdf(d1) - 1
+        theta = (- (S * pdf_d1 * iv) / (2 * np.sqrt(T)) + r * K * np.exp(-r * T) * norm.cdf(-d2)) / 365
+        
+    gamma = pdf_d1 / (S * iv * np.sqrt(T))
+    return {'delta': delta, 'gamma': gamma, 'theta': theta, 'vega': vega}
+
+def process_option_chain(records, selected_expiry, current_price, expiry_date):
+    """Processes raw option chain data into a clean DataFrame and calculates Greeks."""
+    options = []
+    today = datetime.now()
+    expiry_dt = datetime.strptime(expiry_date, '%d-%b-%Y')
+    time_to_expiry = (expiry_dt - today + timedelta(hours=8)).days / 365.0 # Add buffer for trading hours
+    if time_to_expiry < 0: time_to_expiry = 0
+
     for record in records:
-        if record.get("expiryDate") == selected_expiry:
-            strike = record['strikePrice']
-            ce = record.get("CE")
-            pe = record.get("PE")
-            if ce:
-                calls.append({"strike": strike, **ce})
-            if pe:
-                puts.append({"strike": strike, **pe})
-    df_calls = pd.DataFrame(calls).set_index("strike")
-    df_puts = pd.DataFrame(puts).set_index("strike")
-    df = pd.concat([df_calls.add_prefix("CE_"), df_puts.add_prefix("PE_")], axis=1)
-    return df.sort_index()
+        if record.get("expiryDate") != selected_expiry:
+            continue
+        
+        strike_price = record.get('strikePrice')
+        if not strike_price: continue
+
+        for opt_type in ['CE', 'PE']:
+            option_data = record.get(opt_type)
+            if not option_data or 'strikePrice' not in option_data: continue
+            
+            iv = option_data.get('impliedVolatility', 0) / 100
+            
+            greeks = calculate_greeks(
+                S=current_price, K=strike_price, T=time_to_expiry, r=RISK_FREE_RATE,
+                iv=iv, option_type='call' if opt_type == 'CE' else 'put'
+            )
+            
+            options.append({
+                'Type': opt_type, 'Strike': strike_price,
+                'LTP': option_data.get('lastPrice', 0),
+                'IV': iv * 100, 'OI': option_data.get('openInterest', 0),
+                'Chg_OI': option_data.get('changeinOpenInterest', 0),
+                'Volume': option_data.get('totalTradedVolume', 0),
+                'Delta': greeks['delta'], 'Theta': greeks['theta'], 'Vega': greeks['vega']
+            })
+
+    if not options: return pd.DataFrame()
+    df = pd.DataFrame(options)
+    
+    # Merge CE and PE data side-by-side
+    df_calls = df[df['Type'] == 'CE'].set_index('Strike').add_prefix('CE_')
+    df_puts = df[df['Type'] == 'PE'].set_index('Strike').add_prefix('PE_')
+    
+    full_df = pd.concat([df_calls, df_puts], axis=1).sort_index()
+    full_df.columns.name = selected_expiry
+    return full_df.fillna(0)
 
 
-def plot_oi_bar_chart(df):
-    with st.container():
-        col1, col2 = st.columns([2.5, 1], vertical_alignment="center")
-        with col1:
-            st.markdown("#### 📊 Open Interest by Strike Price")
-            fig = go.Figure()
-            fig.add_trace(go.Bar(x=df.index, y=df['CE_openInterest'], name='CE OI', marker_color='red'))
-            fig.add_trace(go.Bar(x=df.index, y=df['PE_openInterest'], name='PE OI', marker_color='green'))
-            fig.update_layout(title="Open Interest by Strike Price", barmode='group')
-            st.plotly_chart(fig, use_container_width=True)
-        with col2:
-            st.markdown("- **Call OI (red)**: May indicate resistance levels.\n"
-                        "- **Put OI (green)**: May indicate support levels.\n"
-                        "- Rising OI = stronger conviction\n"
-                        "- Unwinding OI = exit or reversal zone")
+# --- UI & ANALYSIS COMPONENTS ---
 
-
-def plot_pcr(df):
-    with st.container():
-        col1, col2 = st.columns([2.5, 1], vertical_alignment="center")
-        with col1:
-            st.markdown("#### ⚖️ Put-Call Ratio (PCR)")
-            df['PCR'] = df['PE_openInterest'] / df['CE_openInterest']
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df.index, y=df['PCR'], mode='lines+markers', name='PCR'))
-            fig.update_layout(title="Put-Call Ratio by Strike")
-            st.plotly_chart(fig, use_container_width=True)
-        with col2:
-            st.markdown("- PCR > 1: Bullish bias\n"
-                        "- PCR < 1: Bearish bias\n"
-                        "- Extreme values can indicate overbought/oversold sentiment")
-
+def create_summary_metrics(df, current_price):
+    """Displays key summary metrics in metric cards."""
+    st.markdown("#### 📈 Market Snapshot")
+    cols = st.columns(5)
+    
+    total_ce_oi = df['CE_OI'].sum()
+    total_pe_oi = df['PE_OI'].sum()
+    pcr_oi = total_pe_oi / total_ce_oi if total_ce_oi > 0 else 0
+    max_ce_strike = df['CE_OI'].idxmax() if not df['CE_OI'].empty else 0
+    max_pe_strike = df['PE_OI'].idxmax() if not df['PE_OI'].empty else 0
+    
+    with cols[0]:
+        st.metric("Spot Price", f"₹{current_price:,.2f}")
+    with cols[1]:
+        st.metric("Total Call OI", f"{total_ce_oi:,.0f}")
+    with cols[2]:
+        st.metric("Total Put OI", f"{total_pe_oi:,.0f}")
+    with cols[3]:
+        st.metric("OI PCR", f"{pcr_oi:.2f}", help="Put-Call Ratio by Open Interest. > 1 is Bullish, < 0.7 is Bearish.")
+    with cols[4]:
+        st.metric("Key Levels (R/S)", f"{max_ce_strike:,}/{max_pe_strike:,}", help="Resistance (Max Call OI) / Support (Max Put OI)")
 
 def calculate_max_pain(df):
-    pain = {}
-    for strike in df.index:
-        pain[strike] = ((df['CE_openInterest'] * abs(df.index - strike)).sum() +
-                        (df['PE_openInterest'] * abs(df.index - strike)).sum())
-    min_pain = min(pain, key=pain.get)
-    return min_pain
+    """Calculates the Max Pain strike price."""
+    strikes = df.index.values
+    ce_oi = df['CE_OI'].values
+    pe_oi = df['PE_OI'].values
+    
+    total_loss = []
+    for expiry_price in strikes:
+        call_loss = np.where(strikes < expiry_price, (expiry_price - strikes) * ce_oi, 0).sum()
+        put_loss = np.where(strikes > expiry_price, (strikes - expiry_price) * pe_oi, 0).sum()
+        total_loss.append(call_loss + put_loss)
+        
+    min_loss_idx = np.argmin(total_loss)
+    return strikes[min_loss_idx]
 
+def plot_oi_and_iv_charts(df, current_price):
+    """Plots Open Interest and Implied Volatility charts."""
+    # --- OI Chart ---
+    fig_oi = go.Figure()
+    fig_oi.add_trace(go.Bar(x=df.index, y=df['CE_OI'], name='Call OI', marker_color='rgba(239, 83, 80, 0.8)'))
+    fig_oi.add_trace(go.Bar(x=df.index, y=df['PE_OI'], name='Put OI', marker_color='rgba(38, 166, 154, 0.8)'))
+    
+    max_pain = calculate_max_pain(df)
+    fig_oi.add_vline(x=current_price, line_width=2, line_dash="dash", line_color="orange",
+                     annotation_text=f"Spot: {current_price:,.0f}", annotation_position="top left")
+    fig_oi.add_vline(x=max_pain, line_width=2, line_dash="dot", line_color="blue",
+                     annotation_text=f"Max Pain: {max_pain:,.0f}", annotation_position="top right")
 
-def show_support_resistance(df):
-    st.markdown("#### 🛡️ Support & Resistance Zones from OI (Top 5)")
-    st.markdown("These help in identifying range, breakout zones, or safe entry levels.")
-    col1, col2 = st.columns(2, vertical_alignment="center")
-    with col1:
-        st.markdown("### Resistance (Call OI)")
-        top_ce = df['CE_openInterest'].nlargest(5)
-        st.dataframe(top_ce.to_frame().style.apply(
-            lambda row: ['background-color: #ffb6b6; font-weight: bold']*len(row) if row.name == top_ce.index[0] else ['background-color: #ffe4e1']*len(row),
-            axis=1
-        ), use_container_width=True)
-    with col2:
-        st.markdown("### Support (Put OI)")
-        top_pe = df['PE_openInterest'].nlargest(5)
-        st.dataframe(top_pe.to_frame().style.apply(
-            lambda row: ['background-color: #90ee90; font-weight: bold']*len(row) if row.name == top_pe.index[0] else ['background-color: #eaffea']*len(row),
-            axis=1
-        ), use_container_width=True)
+    fig_oi.update_layout(title="<b>Open Interest Analysis</b>", barmode='group',
+                          xaxis_title="Strike Price", yaxis_title="Open Interest",
+                          hovermode='x unified', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    st.plotly_chart(fig_oi, use_container_width=True)
 
+    # --- IV Chart ---
+    fig_iv = go.Figure()
+    fig_iv.add_trace(go.Scatter(x=df.index, y=df['CE_IV'], name='Call IV', mode='lines+markers', line=dict(color='rgba(239, 83, 80, 0.8)')))
+    fig_iv.add_trace(go.Scatter(x=df.index, y=df['PE_IV'], name='Put IV', mode='lines+markers', line=dict(color='rgba(38, 166, 154, 0.8)')))
+    
+    fig_iv.add_vline(x=current_price, line_width=2, line_dash="dash", line_color="orange",
+                     annotation_text=f"Spot: {current_price:,.0f}", annotation_position="bottom right")
 
-def plot_oi_change_highlight(df):
-    st.markdown("#### 🔥 Top 5 OI Changes (Build-up/Unwinding)")
-    ce_oi_chg = df['CE_changeinOpenInterest'].sort_values(ascending=False)
-    pe_oi_chg = df['PE_changeinOpenInterest'].sort_values(ascending=False)
-    # Get top 5 for each
-    ce_bu = ce_oi_chg.head(5)
-    ce_uw = ce_oi_chg.tail(5)
-    pe_bu = pe_oi_chg.head(5)
-    pe_uw = pe_oi_chg.tail(5)
-    # Find common strike prices
-    bu_common = set(ce_bu.index) & set(pe_bu.index)
-    uw_common = set(ce_uw.index) & set(pe_uw.index)
-    def highlight_row(row, common, color_bu, color_uw):
-        if row.name in common:
-            return [f'background-color: {color_bu if row[0] >= 0 else color_uw}; font-weight: bold']
-        return ['']
-    col_bu, col_uw = st.columns(2)
-    with col_bu:
-        st.markdown("**Top 5 CE OI Build-up:** (Buyers: green, Common: dark green)")
-        st.dataframe(
-            ce_bu.to_frame().style.apply(
-                highlight_row, common=bu_common, color_bu='#228B22', color_uw='#90ee90', axis=1
-            ).applymap(lambda v: 'background-color: #90ee90' if v >= 0 else ''),
-            use_container_width=True
-        )
-        st.markdown("**Top 5 PE OI Unwinding:** (Sellers: red, Common: dark red)")
-        st.dataframe(
-            pe_uw.to_frame().style.apply(
-                highlight_row, common=uw_common, color_bu='#8B0000', color_uw='#ffb6b6', axis=1
-            ).applymap(lambda v: 'background-color: #ffb6b6' if v < 0 else ''),
-            use_container_width=True
-        )
-    with col_uw:
-        st.markdown("**Top 5 PE OI Build-up:** (Buyers: green, Common: dark green)")
-        st.dataframe(
-            pe_bu.to_frame().style.apply(
-                highlight_row, common=bu_common, color_bu='#228B22', color_uw='#90ee90', axis=1
-            ).applymap(lambda v: 'background-color: #90ee90' if v >= 0 else ''),
-            use_container_width=True
-        )
-        st.markdown("**Top 5 CE OI Unwinding:** (Sellers: red, Common: dark red)")
-        st.dataframe(
-            ce_uw.to_frame().style.apply(
-                highlight_row, common=uw_common, color_bu='#8B0000', color_uw='#ffb6b6', axis=1
-            ).applymap(lambda v: 'background-color: #ffb6b6' if v < 0 else ''),
-            use_container_width=True
-        )
+    fig_iv.update_layout(title="<b>Implied Volatility (IV) Smile/Skew</b>",
+                          xaxis_title="Strike Price", yaxis_title="Implied Volatility (%)",
+                          hovermode='x unified', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    st.plotly_chart(fig_iv, use_container_width=True)
 
+def show_trading_insights(df, current_price):
+    """Displays actionable trading insights based on processed data."""
+    st.markdown("#### 💡 Actionable Trading Insights")
+    
+    pcr = df['PE_OI'].sum() / df['CE_OI'].sum() if df['CE_OI'].sum() > 0 else 0
+    max_pain = calculate_max_pain(df)
+    key_resistance = df['CE_OI'].idxmax()
+    key_support = df['PE_OI'].idxmax()
 
-def plot_oi_heatmap(df):
-    st.markdown("#### 🗺️ Option Chain OI & Change Heatmap")
-    import plotly.express as px
-    heatmap_df = df[[
-        'CE_openInterest', 'CE_changeinOpenInterest',
-        'PE_openInterest', 'PE_changeinOpenInterest']].copy()
-    heatmap_df = heatmap_df.reset_index().melt(id_vars='strike')
-    fig = px.imshow(
-        heatmap_df.pivot(index='variable', columns='strike', values='value'),
-        aspect='auto', color_continuous_scale='Viridis',
-        labels=dict(x="Strike", y="Metric", color="Value")
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    # Sentiment based on PCR
+    if pcr > 1.2: sentiment, emoji = "Bullish", "🟢"
+    elif pcr < 0.7: sentiment, emoji = "Bearish", "🔴"
+    else: sentiment, emoji = "Neutral / Range-bound", "🟡"
+    
+    # IV Analysis - finding ATM IV
+    atm_strike_ce = df.iloc[(df.index - current_price).abs().argsort()]['CE_IV'].iloc[0]
+    atm_strike_pe = df.iloc[(df.index - current_price).abs().argsort()]['PE_IV'].iloc[0]
+    avg_atm_iv = (atm_strike_ce + atm_strike_pe) / 2
+    
+    if avg_atm_iv > 25: iv_condition = "High - Option premiums are expensive. Favorable for sellers."
+    elif avg_atm_iv < 12: iv_condition = "Low - Option premiums are cheap. Favorable for buyers."
+    else: iv_condition = "Moderate - Option premiums are fairly priced."
 
+    cols = st.columns(2)
+    with cols[0]:
+        st.markdown(f"**Sentiment:** {emoji} {sentiment} (PCR: {pcr:.2f})")
+        st.markdown(f"**IV Environment:** {iv_condition} (ATM IV: {avg_atm_iv:.2f}%)")
+    with cols[1]:
+        st.markdown(f"**Key Support:** ₹{key_support:,.0f}")
+        st.markdown(f"**Key Resistance:** ₹{key_resistance:,.0f}")
+        st.markdown(f"**Expiry Bias (Max Pain):** Tends towards ₹{max_pain:,.0f}")
 
-def highlight_iv_spike(df):
-    st.markdown("#### ⚡ IV Crush/Spike Detection")
-    ce_iv = df['CE_impliedVolatility']
-    pe_iv = df['PE_impliedVolatility']
-    ce_iv_spike = ce_iv[ce_iv > ce_iv.mean() + ce_iv.std()]
-    pe_iv_spike = pe_iv[pe_iv > pe_iv.mean() + pe_iv.std()]
-    ce_iv_crush = ce_iv[ce_iv < ce_iv.mean() - ce_iv.std()]
-    pe_iv_crush = pe_iv[pe_iv < pe_iv.mean() - pe_iv.std()]
-    st.write(f"**CE IV Spikes:** {ce_iv_spike.index.tolist()}")
-    st.write(f"**PE IV Spikes:** {pe_iv_spike.index.tolist()}")
-    st.write(f"**CE IV Crush:** {ce_iv_crush.index.tolist()}")
-    st.write(f"**PE IV Crush:** {pe_iv_crush.index.tolist()}")
+def find_strategic_options(df, current_price):
+    """Identifies potentially good options to buy based on a scoring model."""
+    st.markdown("#### 🎯 Strategy Dashboard: Best Options to Buy")
+    st.info("For positional buyers. Ranks OTM options based on a balance of Delta (direction), Theta (low decay), and IV (cost).")
 
+    # Filter for OTM options within a reasonable range
+    otm_calls = df[(df.index > current_price) & (df.index < current_price * 1.05) & (df['CE_OI'] > 0)]
+    otm_puts = df[(df.index < current_price) & (df.index > current_price * 0.95) & (df['PE_OI'] > 0)]
 
-# --- Main Logic ---
-st.markdown("This dashboard helps you track how this week's index options are positioned, giving you insights for next week's trades.")
+    # Scoring: Higher delta is good, lower (less negative) theta is good, lower IV is good.
+    # We normalize to make them comparable.
+    def calculate_scores(df, opt_type):
+        if df.empty: return df
+        prefix = f'{opt_type}_'
+        delta_score = df[f'{prefix}Delta'] / df[f'{prefix}Delta'].max()
+        theta_score = 1 - (df[f'{prefix}Theta'].abs() / df[f'{prefix}Theta'].abs().max())
+        iv_score = 1 - (df[f'{prefix}IV'] / df[f'{prefix}IV'].max())
+        # Weights: Emphasize Theta for positional plays
+        df['Score'] = 0.3 * delta_score + 0.5 * theta_score + 0.2 * iv_score
+        return df.sort_values('Score', ascending=False)
 
-col_sel1, col_sel2, col_sel3 = st.columns([1, 2, 2], vertical_alignment="center")
-with col_sel1:
-    selected_index = st.selectbox("Select Index", list(INDEX_SYMBOLS.keys()), index=0)
-with col_sel2:
-    expiry_type = st.radio(
-        "Select Expiry Type(s)",
-        ["Weekly", "Monthly", "Both (Compare)"],
-        index=0,
-        horizontal=True
-    )
-
-# Fetch option chain for selected index
-records, expiry_dates = fetch_option_chain(INDEX_SYMBOLS[selected_index])
-if records is None or not expiry_dates:
-    st.stop()
-
-# --- Helper to filter expiry dates ---
-def get_expiry_types(expiry_dates):
-    weekly = []
-    monthly = []
-    for d in expiry_dates:
-        dt = pd.to_datetime(d, dayfirst=True, errors='coerce')
-        if pd.isnull(dt):
-            continue
-        # Monthly expiry: last Thursday of the month
-        last_thu = (dt + pd.offsets.MonthEnd(0)).replace(day=1) + pd.offsets.Week(weekday=3, n=4)
-        if last_thu.month != dt.month:
-            last_thu = last_thu - pd.offsets.Week(1)
-        if dt.date() == last_thu.date():
-            monthly.append(d)
-        else:
-            weekly.append(d)
-    return weekly, monthly
-
-weekly_expiries, monthly_expiries = get_expiry_types(expiry_dates)
-
-# --- Expiry selection logic ---
-if expiry_type == "Weekly":
-    default_expiries = weekly_expiries[:1] if weekly_expiries else []
-    available_expiries = weekly_expiries
-elif expiry_type == "Monthly":
-    default_expiries = monthly_expiries[:1] if monthly_expiries else []
-    available_expiries = monthly_expiries
-else:  # Both
-    default_expiries = []
-    if weekly_expiries:
-        default_expiries.append(weekly_expiries[0])
-    if monthly_expiries:
-        default_expiries.append(monthly_expiries[0])
-    available_expiries = []
-    if weekly_expiries:
-        available_expiries += weekly_expiries
-    if monthly_expiries:
-        available_expiries += monthly_expiries
-
-with col_sel3:
-    selected_expiries = st.multiselect(
-        "Select up to 2 Expiry Dates to Compare",
-        available_expiries,
-        default=default_expiries,
-        max_selections=2
-    )
-if len(selected_expiries) == 0:
-    st.warning("Please select at least one expiry date.")
-    st.stop()
-if len(selected_expiries) > 2:
-    st.warning("Please select at most two expiry dates.")
-    st.stop()
-
-# Prepare dataframes for selected expiries
-analysis = {}
-for expiry in selected_expiries:
-    df = process_option_chain(records, expiry)
-    analysis[expiry] = df
-
-with st.expander("🧠 How to Use the Option Chain to Predict Index Movement", expanded=False):
-    st.markdown("""
-1. **OI Buildup:** Heavy CE OI above price = Resistance; Heavy PE OI below = Support
-2. **Change in OI:** Fresh positions = trend conviction; Unwinding = reversal/profit-booking
-3. **Put/Call Ratio (PCR):** PCR > 1: Bullish; PCR < 1: Bearish
-4. **Max Pain Theory:** Price tends to move toward Max Pain by expiry
-5. **IV Crush/Spike:** High IV + falling price = fear; IV cooling + rising price = stability
-    """)
-
-# Show analysis side by side if two expiries selected
-if len(selected_expiries) == 2:
-    exp1, exp2 = selected_expiries
-    st.subheader(f"📋 Option Chain Data Comparison: {exp1} vs {exp2}")
+    top_calls = calculate_scores(otm_calls, 'CE')
+    top_puts = calculate_scores(otm_puts, 'PE')
+    
+    display_cols = ['CE_LTP', 'CE_IV', 'CE_Delta', 'CE_Theta', 'Score']
+    put_display_cols = ['PE_LTP', 'PE_IV', 'PE_Delta', 'PE_Theta', 'Score']
+    
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown(f"#### {exp1}")
-        st.dataframe(analysis[exp1][[
-            'CE_openInterest', 'CE_changeinOpenInterest', 'CE_impliedVolatility',
-            'PE_openInterest', 'PE_changeinOpenInterest', 'PE_impliedVolatility']])
-        plot_oi_bar_chart(analysis[exp1])
-        plot_oi_change_highlight(analysis[exp1])
-        plot_pcr(analysis[exp1])
-        highlight_iv_spike(analysis[exp1])
-        max_pain1 = calculate_max_pain(analysis[exp1])
-        st.success(f"📌 Max Pain: {max_pain1}")
-        show_support_resistance(analysis[exp1])
+        st.markdown("**Top 3 Calls to Consider**")
+        st.dataframe(top_calls[display_cols].head(3).style.format({
+            'CE_LTP': '₹{:,.2f}', 'CE_IV': '{:.2f}%', 'CE_Delta': '{:.2f}',
+            'CE_Theta': '₹{:,.2f}', 'Score': '{:.2f}'
+        }).background_gradient(cmap='Greens', subset=['Score']), use_container_width=True)
     with col2:
-        st.markdown(f"#### {exp2}")
-        st.dataframe(analysis[exp2][[
-            'CE_openInterest', 'CE_changeinOpenInterest', 'CE_impliedVolatility',
-            'PE_openInterest', 'PE_changeinOpenInterest', 'PE_impliedVolatility']])
-        plot_oi_bar_chart(analysis[exp2])
-        plot_oi_change_highlight(analysis[exp2])
-        plot_pcr(analysis[exp2])
-        highlight_iv_spike(analysis[exp2])
-        max_pain2 = calculate_max_pain(analysis[exp2])
-        st.success(f"📌 Max Pain: {max_pain2}")
-        show_support_resistance(analysis[exp2])
-    # Move heatmap to bottom
-    st.markdown("#### 🗺️ Option Chain OI & Change Heatmap")
-    plot_oi_heatmap(analysis[exp1])
-    if len(analysis) > 1:
-        plot_oi_heatmap(analysis[exp2])
-else:
-    expiry = selected_expiries[0]
-    df = analysis[expiry]
-    st.subheader(f"📋 Option Chain Data: {expiry}")
-    col1, col2 = st.columns([2.5, 1], vertical_alignment="center")
-    with col1:
-        st.dataframe(df[[
-            'CE_openInterest', 'CE_changeinOpenInterest', 'CE_impliedVolatility',
-            'PE_openInterest', 'PE_changeinOpenInterest', 'PE_impliedVolatility']])
-    with col2:
-        st.markdown("- **Open Interest** shows where positions are being built\n"
-                    "- **Change in OI** reveals bullish/bearish additions\n"
-                    "- **IV** hints at expected volatility or premium")
-    plot_oi_bar_chart(df)
-    plot_oi_change_highlight(df)
-    plot_pcr(df)
-    highlight_iv_spike(df)
-    max_pain = calculate_max_pain(df)
-    st.success(f"📌 Max Pain: {max_pain}")
-    show_support_resistance(df)
-    # Move heatmap to bottom
-    st.markdown("#### 🗺️ Option Chain OI & Change Heatmap")
-    plot_oi_heatmap(df)
+        st.markdown("**Top 3 Puts to Consider**")
+        st.dataframe(top_puts[put_display_cols].head(3).style.format({
+            'PE_LTP': '₹{:,.2f}', 'PE_IV': '{:.2f}%', 'PE_Delta': '{:.2f}',
+            'PE_Theta': '₹{:,.2f}', 'Score': '{:.2f}'
+        }).background_gradient(cmap='Reds', subset=['Score']), use_container_width=True)
 
+# --- MAIN APP LAYOUT ---
+st.title("🎯 Advanced Index Options Tool")
+st.markdown("*A data-driven dashboard for positional option traders.*")
+
+# --- CONTROLS ---
+header_cols = st.columns([2, 2, 4, 1.2])
+with header_cols[0]:
+    selected_index = st.selectbox("Select Index", list(INDEX_SYMBOLS.keys()))
+with header_cols[1]:
+    expiry_type = st.radio("Expiry Type", ["Weekly", "Monthly"], index=0, horizontal=True)
+with header_cols[3]:
+    if st.button("🔄 Refresh Data"):
+        st.cache_data.clear()
+        st.rerun()
+
+# --- DATA FETCHING & VALIDATION ---
+with st.spinner(f"Fetching {selected_index} option chain from NSE..."):
+    records, filtered_records = fetch_nse_option_chain(INDEX_SYMBOLS[selected_index])
+
+if not st.session_state.data_loaded or not records:
+    for msg in st.session_state.error_messages:
+        st.error(f"❌ {msg}")
+    st.warning("Could not fetch data. The NSE server might be busy. Please try refreshing in a moment.")
+    st.stop()
+
+st.success(f"✅ Data for {selected_index} loaded successfully at {time.strftime('%H:%M:%S')}")
+
+current_price = filtered_records.get('underlyingValue') if filtered_records else get_current_price(selected_index)
+if current_price is None:
+    st.error("Could not determine the current price. Analysis will be limited.")
+    st.stop()
+
+# --- EXPIRY SELECTION ---
+expiry_dates = records.get('expiryDates', [])
+weekly_expiries, monthly_expiries = get_expiry_types(expiry_dates)
+available_expiries = weekly_expiries if expiry_type == "Weekly" else monthly_expiries
+
+if not available_expiries:
+    st.warning(f"No {expiry_type.lower()} expiries found for {selected_index}.")
+    st.stop()
+    
+# Logic for default selection based on user's strategy
+# Default to next week's expiry if available, otherwise the first available
+today = datetime.now()
+next_tuesday = today + timedelta(days=(1 - today.weekday() + 7) % 7)
+default_selection = available_expiries[0]
+for expiry_str in available_expiries:
+    expiry_dt = datetime.strptime(expiry_str, '%d-%b-%Y')
+    if expiry_dt.date() > next_tuesday.date():
+        default_selection = expiry_str
+        break
+
+with header_cols[2]:
+    selected_expiry = st.selectbox("Select Expiry Date", available_expiries, index=available_expiries.index(default_selection))
+
+# --- DATA PROCESSING & DISPLAY ---
+df = process_option_chain(records['data'], selected_expiry, current_price, selected_expiry)
+
+if df.empty:
+    st.error(f"No option data processed for {selected_expiry}. Please select another date.")
+    st.stop()
+
+# --- ANALYSIS TABS ---
+tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎛️ Strategy & Greeks", "📚 Trading Tips"])
+
+with tab1:
+    create_summary_metrics(df, current_price)
+    st.markdown("---")
+    plot_oi_and_iv_charts(df, current_price)
+    
+with tab2:
+    show_trading_insights(df, current_price)
+    st.markdown("---")
+    find_strategic_options(df, current_price)
+    st.markdown("---")
+    
+    with st.expander("🔬 View Full Option Chain Data with Greeks", expanded=False):
+        # Clean up for display
+        display_df = df.copy()
+        display_df.index.name = "Strike"
+        # Rounding for cleaner view
+        for col in display_df.columns:
+            if 'Delta' in col or 'Theta' in col or 'Vega' in col:
+                display_df[col] = display_df[col].round(3)
+            if 'IV' in col:
+                display_df[col] = display_df[col].round(2)
+        st.dataframe(display_df, use_container_width=True)
+
+with tab3:
+    st.markdown("""
+    ### 📘 Positional Weekly Options Strategy Guide
+
+    This tool is designed to support a specific strategy: entering a positional trade on a **Tuesday or Wednesday** for the **next week's expiry**.
+
+    **✅ Entry Checklist (Tuesday/Wednesday):**
+    1.  **Select Next Week's Expiry:** Use the dropdown to choose the correct date.
+    2.  **Check Market Sentiment (Dashboard Tab):** Is the PCR bullish (>1.2) or bearish (<0.7)? This sets your initial bias.
+    3.  **Analyze IV Environment (Strategy Tab):**
+        - **Low IV (<12%)**: Good for buying options (they are cheaper).
+        - **High IV (>25%)**: Options are expensive. Be cautious with buying; consider strategies that benefit from falling IV.
+    4.  **Identify Key Levels (Dashboard Tab):** Note the major support (max Put OI) and resistance (max Call OI) levels. These are magnets and potential turning points.
+    5.  **Consult the Strategy Dashboard (Strategy Tab):**
+        - If you are bullish, review the "Top Calls to Consider".
+        - If you are bearish, review the "Top Puts to Consider".
+        - These suggestions balance direction (Delta) with time decay (Theta), which is critical for positional holds.
+    6.  **Review the Greeks (Full Data Table):**
+        - **Delta:** How much the option price will move for a ₹1 move in the index. Higher is more directional.
+        - **Theta:** How much value the option loses per day. **This is your primary cost as a positional buyer.** Look for lower (less negative) Theta values.
+        - **Vega:** Sensitivity to IV. If you expect volatility to rise, a high Vega is good.
+
+    **🚨 Risk Management:**
+    - **Stop-Loss:** A crucial rule is to set a stop-loss on your premium, typically 25-30%.
+    - **Time Decay (Theta):** Theta accelerates massively in the last 2-3 days before expiry. This strategy avoids holding during that window by targeting the *next* week's expiry.
+    - **Profit Target:** Aim for a risk-reward ratio of at least 1:2. If your stop-loss is 10 points, your first target should be at least 20 points.
+    """)
+
+# --- FOOTER ---
+st.sidebar.markdown("---")
 st.sidebar.markdown("---")    
 st.sidebar.markdown("""
     <style>
