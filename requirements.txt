@@ -10,3 +10,4 @@ duckdb
 polars
 statsmodels
 retry
+lxml
