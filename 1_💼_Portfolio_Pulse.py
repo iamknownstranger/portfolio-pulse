@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 import random
 
+import duckdb
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -33,9 +34,10 @@ symbols_string = ", ".join(symbols)
 st.write(f"Your portfolio consists of {len(symbols)} stocks and their symbols are **{symbols_string}**")
 
 @st.cache_data(ttl=86400)
-def get_data(tickers, start, end):
+def get_data(tickers, start, end, max_retries=3, retry_delay=5):
+    import duckdb
     try:
-        # Attempt to fetch data from DuckDB
+        con = duckdb.connect("data/market_data.db")
         query = f"""
         SELECT date, symbol, close_price FROM market_data
         WHERE symbol IN ({', '.join([f'\'{ticker}\'' for ticker in tickers])})
@@ -43,20 +45,32 @@ def get_data(tickers, start, end):
         ORDER BY date;
         """
         df_duckdb = pd.DataFrame(con.execute(query).fetchall(), columns=['date', 'symbol', 'close_price'])
+        con.close()
         if not df_duckdb.empty:
             df_duckdb = df_duckdb.pivot(index='date', columns='symbol', values='close_price')
             return df_duckdb
     except Exception as e:
         st.warning(f"DuckDB data fetch failed: {e}. Falling back to yfinance.")
 
-    # Fallback to yfinance if DuckDB fails
-    try:
-        df_yf = yf.download(tickers, start=start, end=end, auto_adjust=False, multi_level_index=False)["Close"]
-        df_yf.index = df_yf.index.date
-        return df_yf.dropna(axis=1, how='all')
-    except Exception as e:
-        st.error(f"Error fetching data from yfinance: {e}")
-        return pd.DataFrame()
+    # Fallback to yfinance with retry logic
+    for attempt in range(max_retries):
+        try:
+            df_yf = yf.download(tickers, start=start, end=end, auto_adjust=False, multi_level_index=False)["Close"]
+            df_yf.index = df_yf.index.date
+            return df_yf.dropna(axis=1, how='all')
+        except Exception as e:
+            if 'rate limit' in str(e).lower() or 'too many requests' in str(e).lower():
+                if attempt < max_retries - 1:
+                    st.warning(f"Yahoo Finance rate limited. Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    st.error("Too Many Requests from Yahoo Finance. Please try after a while.")
+                    return pd.DataFrame()
+            else:
+                st.error(f"Error fetching data from yfinance: {e}")
+                return pd.DataFrame()
+    return pd.DataFrame()
 
 df = get_data(symbols, start_date, end_date)
 

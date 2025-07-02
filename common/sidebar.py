@@ -21,13 +21,6 @@ def get_sp500_tickers():
 SP_500 = get_sp500_tickers()
 
 def render_sidebar():
-    # --- App Header and Brief (left-aligned) ---
-    st.sidebar.markdown("""
-    <h2 style='text-align: left; margin-bottom: 0.2em;'>💼 Portfolio Pulse</h2>
-    <p style='text-align: left; font-size: 1.05em; color: #bbb; margin-bottom: 1.2em;'>
-        Analyze, optimize, and track your investment portfolio with advanced analytics, risk metrics, and benchmarking tools.
-    </p>
-    """, unsafe_allow_html=True)
     st.sidebar.title("Portfolio Filters")
     st.sidebar.info("Provide stock tickers and select a date range to analyze your portfolio performance.")
     
