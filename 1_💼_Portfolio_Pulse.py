@@ -14,65 +14,11 @@ from common.sidebar import render_sidebar
 
 st.set_page_config(page_title="Portfolio Analyzer", page_icon="💼", layout="wide")
 
-SP_500 = ["MMM", "ABT", "ABBV", "ABMD", "ACN", "ATVI", "ADBE", "AAP", "AMD", "AES",
-            "AFL", "A", "APD", "AKAM", "ALK", "ALB", "ARE", "ALXN", "ALGN", "ALLE",
-            "LNT", "ALL", "GOOGL", "GOOG", "MO", "AMZN", "AMCR", "AEE", "AAL", "AEP",
-            "AXP", "AIG", "AMT", "AWK", "AMP", "ABC", "AME", "AMGN", "APH", "ADI", "ANSS",
-            "ANTM", "AON", "AOS", "APA", "AAPL", "AMAT", "APTV", "ADM", "ANET", "AJG",
-            "AIZ", "T", "ATO", "ADSK", "ADP", "AZO", "AVB", "AVY", "BKR", "BLL", "BAC",
-            "BK", "BAX", "BDX", "BRK.B", "BBY", "BIO", "BIIB", "BLK", "BA", "BKNG",
-            "BWA", "BXP", "BSX", "BMY", "AVGO", "BR", "BF.B", "CHRW", "COG", "CDNS",
-            "CZR", "CPB", "COF", "CAH", "KMX", "CCL", "CARR", "CTLT", "CAT", "CBOE",
-            "CBRE", "CDW", "CE", "CNC", "CNP", "CERN", "CF", "SCHW", "CHTR", "CVX",
-            "CMG", "CB", "CHD", "CI", "CINF", "CTAS", "CSCO", "C", "CFG", "CTXS",
-            "CLX", "CME", "CMS", "KO", "CTSH", "CL", "CMCSA", "CMA", "CAG", "COP",
-            "ED", "STZ", "COO", "CPRT", "GLW", "CTVA", "COST", "CCI", "CSX", "CMI",
-            "CVS", "DHI", "DHR", "DRI", "DVA", "DE", "DAL", "XRAY", "DVN", "DXCM",
-            "FANG", "DLR", "DFS", "DISCA", "DISCK", "DISH", "DG", "DLTR", "D", "DPZ",
-            "DOV", "DOW", "DTE", "DUK", "DRE", "DD", "DXC", "EMN", "ETN", "EBAY",
-            "ECL", "EIX", "EW", "EA", "EMR", "ENPH", "ETR", "EOG", "EFX", "EQIX",
-            "EQR", "ESS", "EL", "ETSY", "EVRG", "ES", "RE", "EXC", "EXPE", "EXPD",
-            "EXR", "XOM", "FFIV", "FB", "FAST", "FRT", "FDX", "FIS", "FITB", "FE",
-            "FRC", "FISV", "FLT", "FMC", "F", "FTNT", "FTV", "FBHS", "FOXA", "FOX",
-            "BEN", "FCX", "GPS", "GRMN", "IT", "GD", "GE", "GIS", "GM", "GPC",
-            "GILD", "GL", "GPN", "GS", "GWW", "HAL", "HBI", "HIG", "HAS", "HCA",
-            "PEAK", "HSIC", "HSY", "HES", "HPE", "HLT", "HFC", "HOLX", "HD", "HON",
-            "HRL", "HST", "HWM", "HPQ", "HUM", "HBAN", "HII", "IEX", "IDXX", "INFO",
-            "ITW", "ILMN", "INCY", "IR", "INTC", "ICE", "IBM", "IP", "IPG", "IFF",
-            "INTU", "ISRG", "IVZ", "IPGP", "IQV", "IRM", "JBHT", "JKHY", "J", "SJM",
-            "JNJ", "JCI", "JPM", "JNPR", "KSU", "K", "KEY", "KEYS", "KMB", "KIM",
-            "KMI", "KLAC", "KHC", "KR", "LHX", "LH", "LRCX", "LW", "LVS", "LEG",
-            "LDOS", "LEN", "LLY", "LNC", "LIN", "LYV", "LKQ", "LMT", "L", "LOW",
-            "LUMN", "LYB", "MTB", "MRO", "MPC", "MKTX", "MAR", "MMC", "MLM", "MAS",
-            "MA", "MKC", "MXIM", "MCD", "MCK", "MDT", "MRK", "MET", "MTD", "MGM",
-            "MCHP", "MU", "MSFT", "MAA", "MHK", "TAP", "MDLZ", "MPWR", "MNST", "MCO",
-            "MS", "MOS", "MSI", "MSCI", "NDAQ", "NTAP", "NFLX", "NWL", "NEM", "NWSA",
-            "NWS", "NEE", "NLSN", "NKE", "NI", "NSC", "NTRS", "NOC", "NLOK", "NCLH",
-            "NOV", "NRG", "NUE", "NVDA", "NVR", "ORLY", "OXY", "ODFL", "OMC", "OKE",
-            "ORCL", "OTIS", "PCAR", "PKG", "PH", "PAYX", "PAYC", "PYPL", "PENN", "PNR",
-            "PBCT", "PEP", "PKI", "PRGO", "PFE", "PM", "PSX", "PNW", "PXD", "PNC",
-            "POOL", "PPG", "PPL", "PFG", "PG", "PGR", "PLD", "PRU", "PTC", "PEG",
-            "PSA", "PHM", "PVH", "QRVO", "PWR", "QCOM", "DGX", "RL", "RJF", "RTX",
-            "O", "REG", "REGN", "RF", "RSG", "RMD", "RHI", "ROK", "ROL", "ROP",
-            "ROST", "RCL", "SPGI", "CRM", "SBAC", "SLB", "STX", "SEE", "SRE", "NOW",
-            "SHW", "SPG", "SWKS", "SNA", "SO", "LUV", "SWK", "SBUX", "STT", "STE",
-            "SYK", "SIVB", "SYF", "SNPS", "SYY", "TMUS", "TROW", "TTWO", "TPR", "TGT",
-            "TEL", "TDY", "TFX", "TER", "TSLA", "TXN", "TXT", "TMO", "TJX", "TSCO",
-            "TT", "TDG", "TRV", "TFC", "TWTR", "TYL", "TSN", "UDR", "ULTA", "USB",
-            "UAA", "UA", "UNP", "UAL", "UNH", "UPS", "URI", "UHS", "UNM", "VFC",
-            "VLO", "VAR", "VTR", "VRSN", "VRSK", "VZ", "VRTX", "VIAC", "V", "VNO",
-            "VMC", "WRB", "WAB", "WMT", "WBA", "DIS", "WM", "WAT", "WEC", "WFC",
-            "WELL", "WST", "WDC", "WU", "WRK", "WY", "WHR", "WMB", "WLTW", "WYNN",
-            "XEL", "XLNX", "XYL", "YUM", "ZBRA", "ZBH", "ZION", "ZTS"]
 
-
-st.title('Portfolio Analyzer')
-
-if 'default_symbols' not in st.session_state:
-    st.session_state.default_symbols = random.sample(SP_500, 5)
+st.title('Portfolio Pulse 💼')
 
 # Render the common sidebar filters
-symbols, start_date, end_date, period = render_sidebar()
+symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()
 
 if not start_date:
     start_date = date.today() - timedelta(days=3*365)
@@ -89,30 +35,57 @@ st.write(f"Your portfolio consists of {len(symbols)} stocks and their symbols ar
 @st.cache_data(ttl=86400)
 def get_data(tickers, start, end):
     try:
-        tickers = tickers + ['BLL']
-        # Attempt to download data for all tickers at once
-        df = yf.download(tickers, start=start, end=end, auto_adjust=False, multi_level_index=False)["Close"]
-        df.index = df.index.date
-        df = df.dropna(axis=1, how='all')
-        return df.replace(to_replace='None', value=np.nan).dropna(axis=0, how="all")
+        # Attempt to fetch data from DuckDB
+        query = f"""
+        SELECT date, symbol, close_price FROM market_data
+        WHERE symbol IN ({', '.join([f'\'{ticker}\'' for ticker in tickers])})
+        AND date BETWEEN '{start}' AND '{end}'
+        ORDER BY date;
+        """
+        df_duckdb = pd.DataFrame(con.execute(query).fetchall(), columns=['date', 'symbol', 'close_price'])
+        if not df_duckdb.empty:
+            df_duckdb = df_duckdb.pivot(index='date', columns='symbol', values='close_price')
+            return df_duckdb
     except Exception as e:
-        dfs = []
-        # Loop over tickers individually to identify the ones that fail.
-        for ticker in tickers:
-            try:
-                df_ticker = yf.download(ticker, start=start, end=end, auto_adjust=False, multi_level_index=False)["Close"]
-                df_ticker.index = df_ticker.index.date
-                dfs.append(df_ticker.rename(ticker))
-            except Exception as e_indiv:
-                st.error(f"Error for {ticker}: {e_indiv}")
-        if dfs:
-            combined = pd.concat(dfs, axis=1)
-            return combined.replace(to_replace='None', value=np.nan).dropna(axis=0, how="all")
+        st.warning(f"DuckDB data fetch failed: {e}. Falling back to yfinance.")
+
+    # Fallback to yfinance if DuckDB fails
+    try:
+        df_yf = yf.download(tickers, start=start, end=end, auto_adjust=False, multi_level_index=False)["Close"]
+        df_yf.index = df_yf.index.date
+        return df_yf.dropna(axis=1, how='all')
+    except Exception as e:
+        st.error(f"Error fetching data from yfinance: {e}")
         return pd.DataFrame()
 
 df = get_data(symbols, start_date, end_date)
 
-if not df.empty:
+# --- Fetch benchmark index data ---
+def get_top100us_index(start_date, end_date):
+    df = pd.read_csv("data/largest-companies-in-the-usa-by-market-cap.csv")
+    df = df.sort_values("marketcap", ascending=False).head(100)
+    tickers = df["Symbol"].tolist()
+    try:
+        df_yf = yf.download(tickers, start=start_date, end=end_date, auto_adjust=False, multi_level_index=False)["Close"]
+        df_yf.index = pd.to_datetime(df_yf.index)
+        index_val = df_yf.mean(axis=1)
+        return index_val.dropna()
+    except Exception as e:
+        st.warning(f"Failed to fetch Top 100 US index data: {e}")
+        return pd.Series(dtype=float)
+
+benchmark_df = None
+if benchmark_symbol == "TOP100US":
+    benchmark_df = get_top100us_index(start_date, end_date)
+elif benchmark_symbol:
+    try:
+        benchmark_df = yf.download(benchmark_symbol, start=start_date, end=end_date)["Close"]
+        benchmark_df = benchmark_df.dropna()
+        benchmark_df.index = pd.to_datetime(benchmark_df.index)
+    except Exception as e:
+        st.warning(f"Failed to fetch benchmark data: {e}")
+
+if not df.empty and benchmark_df is not None and not benchmark_df.empty:
     st.subheader("Historical close price data")
     st.dataframe(df)
     st.subheader("Closing price chart")
@@ -242,3 +215,93 @@ if not df.empty:
 
     st.subheader("📈 Cumulative Returns (Portfolio)")
     st.line_chart(portfolio_cum)
+
+    # --- New: Cumulative Returns: Portfolio vs Benchmark ---
+    daily_returns = df.pct_change().dropna()
+    portfolio_daily = daily_returns.mean(axis=1)
+    portfolio_cum = (1 + portfolio_daily).cumprod()
+    benchmark_daily = benchmark_df.pct_change().dropna()
+    benchmark_cum = (1 + benchmark_daily).cumprod()
+    print(">>> benchmark_cum", benchmark_cum, benchmark_cum)
+    # Align indices for plotting
+    cum_df = pd.concat([
+        portfolio_cum,
+        benchmark_cum
+    ], axis=1, join='inner')
+
+    st.subheader("📈 Cumulative Returns: Portfolio vs Benchmark")
+    st.line_chart(cum_df)
+
+    # --- Metrics comparison ---
+    portfolio_vol = portfolio_daily.std() * np.sqrt(252) * 100
+    benchmark_vol = benchmark_daily.std() * np.sqrt(252) * 100
+    portfolio_cum_return = (portfolio_cum.iloc[-1] - 1) * 100
+    benchmark_cum_return = (benchmark_cum.iloc[-1] - 1) * 100
+    portfolio_max_dd = ((portfolio_cum.cummax() - portfolio_cum) / portfolio_cum.cummax() * 100).max()
+    benchmark_max_dd = ((benchmark_cum.cummax() - benchmark_cum) / benchmark_cum.cummax() * 100).max()
+    downside_std_pf = portfolio_daily[portfolio_daily < 0].std() * np.sqrt(252)
+    downside_std_bm = benchmark_daily[benchmark_daily < 0].std() * np.sqrt(252)
+    portfolio_sortino = (portfolio_daily.mean() * 252) / downside_std_pf if downside_std_pf != 0 else np.nan
+    benchmark_sortino = (benchmark_daily.mean() * 252) / downside_std_bm if downside_std_bm != 0.0 and not np.isnan(downside_std_bm) else np.nan
+    merged = pd.merge(portfolio_daily.reset_index(), benchmark_daily.rename("benchmark_daily").reset_index(), on="index", how="inner")
+    beta_pf = merged["mean"].cov(merged["benchmark_daily"]) / merged["benchmark_daily"].var() if not merged.empty else np.nan
+
+    st.subheader("📊 Performance Metrics Comparison")
+    cols = st.columns(6)
+    cols[0].metric("Portfolio Cum. Return", f"{portfolio_cum_return:.2f}%")
+    cols[1].metric("Benchmark Cum. Return", f"{benchmark_cum_return:.2f}%")
+    cols[2].metric("Portfolio Volatility", f"{portfolio_vol:.2f}%")
+    cols[3].metric("Benchmark Volatility", f"{benchmark_vol:.2f}%")
+    cols[4].metric("Portfolio Sortino", f"{portfolio_sortino:.2f}")
+    cols[5].metric("Benchmark Sortino", f"{benchmark_sortino:.2f}")
+    st.metric("Portfolio Beta vs Benchmark", f"{beta_pf:.2f}")
+
+    st.subheader("Export Data")
+    st.download_button(
+        label="Download Portfolio Data (CSV)",
+        data=df.to_csv().encode('utf-8'),
+        file_name="portfolio_data.csv",
+        mime="text/csv"
+    )
+    st.download_button(
+        label="Download Benchmark Data (CSV)",
+        data=benchmark_df.to_csv().encode('utf-8'),
+        file_name="benchmark_data.csv",
+        mime="text/csv"
+    )
+    # --- Enhancement: Add toggle for dark/light theme for charts ---
+    theme = st.radio("Chart Theme", ["Light", "Dark"], index=1, horizontal=True)
+    chart_template = "plotly_dark" if theme == "Dark" else "plotly_white"
+    
+    correlation_heatmap = px.imshow(correlation_matrix, title='Correlation between Stocks in your portfolio', template=chart_template)
+    st.plotly_chart(correlation_heatmap, use_container_width=True)
+    
+    daily_simple_return_plot = px.line(daily_simple_return, x=daily_simple_return.index,
+                                       y=daily_simple_return.columns,
+                                       title="Volatility in Daily Simple Returns",
+                                       labels={"x": "Date", "y": "Daily Simple Returns"},
+                                       template=chart_template)
+    st.plotly_chart(daily_simple_return_plot, use_container_width=True)
+    
+    daily_simple_return_boxplot = px.box(daily_simple_return, title="Risk Box Plot", template=chart_template)
+    st.plotly_chart(daily_simple_return_boxplot, use_container_width=True)
+    
+    sample_covariance_matrix_heatmap = px.imshow(sample_covariance_matrix, title="Sample Covariance Matrix", template=chart_template)
+    st.plotly_chart(sample_covariance_matrix_heatmap, use_container_width=True)
+    
+    pie_chart = px.pie(df, values=values, names=labels, title='Optimized Portfolio Allocation', template=chart_template)
+    st.plotly_chart(pie_chart, use_container_width=True)
+    
+    st.line_chart(cumulative_returns, use_container_width=True)
+    
+    st.line_chart(portfolio_cum, use_container_width=True)
+    
+    st.line_chart(cum_df, use_container_width=True)
+    
+# --- Enhancement: Add app info/help section ---
+st.sidebar.markdown("---")
+st.sidebar.info("""
+**How to use:**\n
+- Select your portfolio stocks and date range in the sidebar.\n- Choose a benchmark for comparison.\n- Analyze performance, risk, and optimization results.\n- Download your data for further analysis.\n\n**Tip:** Use the chart theme toggle for better visibility in different environments.
+""")
+

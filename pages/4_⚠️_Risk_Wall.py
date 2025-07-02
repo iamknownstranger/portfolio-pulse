@@ -9,7 +9,7 @@ import yfinance as yf
 st.set_page_config(page_title="Risk Wall", page_icon="⚠️", layout="wide")
 st.title("⚠️ Risk Wall")
 
-symbols, start_date, end_date, period = render_sidebar()
+symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()
 
 @st.cache_data(ttl=86400)
 def get_data(tickers, start, end):
@@ -125,4 +125,29 @@ fig_vol = px.line(x=rolling_vol.index, y=rolling_vol,
                   title="30-Day Rolling Portfolio Volatility",
                   labels={"x": "Date", "y": "Volatility (%)"})
 st.plotly_chart(fig_vol, use_container_width=True)
+
+# --- Fetch benchmark index data ---
+def get_top100us_index(start_date, end_date):
+    df = pd.read_csv("data/largest-companies-in-the-usa-by-market-cap.csv")
+    df = df.sort_values("marketcap", ascending=False).head(100)
+    tickers = df["Symbol"].tolist()
+    try:
+        df_yf = yf.download(tickers, start=start_date, end=end_date, auto_adjust=False, multi_level_index=False)["Close"]
+        df_yf.index = pd.to_datetime(df_yf.index)
+        index_val = df_yf.mean(axis=1)
+        return index_val.dropna()
+    except Exception as e:
+        st.warning(f"Failed to fetch Top 100 US index data: {e}")
+        return pd.Series(dtype=float)
+
+benchmark_df = None
+if benchmark_symbol == "TOP100US":
+    benchmark_df = get_top100us_index(start_date, end_date)
+elif benchmark_symbol:
+    try:
+        benchmark_df = yf.download(benchmark_symbol, start=start_date, end=end_date)["Close"]
+        benchmark_df = benchmark_df.dropna()
+        benchmark_df.index = pd.to_datetime(benchmark_df.index)
+    except Exception as e:
+        st.warning(f"Failed to fetch benchmark data: {e}")
 
