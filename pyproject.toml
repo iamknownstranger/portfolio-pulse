@@ -1,0 +1,30 @@
+# Basic pyproject.toml to be filled in later
+[build-system]
+requires = ["uv_build>=0.7.19,<0.8.0"]
+build-backend = "uv_build"
+
+[project]
+name = "portfolio_pulse"
+version = "0.1.0"
+description = "A Streamlit application for portfolio analysis and insights."
+readme = "README.md"
+# Add other metadata like authors, license, classifiers, dependencies, etc.
+# dependencies = [
+# "streamlit",
+# "pandas",
+# # Add other dependencies
+# ]
+
+# Optional: Configure uv tools (e.g., linter, formatter)
+# [tool.uv.lint]
+# ...
+# [tool.uv.fmt]
+# ...
+
+# Configuration for the uv_build backend
+[tool.uv.build-backend]
+module-name = "portfolio_pulse"
+module-root = "src"
+# Include the 'data' directory in distributions
+# This makes files in the project's 'data/' directory available as package data.
+data = {"data" = "data/"}
