@@ -2,7 +2,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from common.options import build_final_df, calculate_greeks, calculate_max_pain
+from common.options import (
+    build_final_df,
+    calculate_greeks,
+    calculate_max_pain,
+    process_nse_data,
+)
 
 
 class TestCalculateGreeks:
@@ -70,6 +75,40 @@ class TestCalculateMaxPain:
     def test_empty_chain_returns_zero(self):
         df = pd.DataFrame({"CE_OI": [], "PE_OI": []})
         assert calculate_max_pain(df) == 0
+
+
+class TestProcessNseData:
+    EXPIRY = "01-Jan-2030"
+
+    def _record(self, expiry_key):
+        leg = {
+            "strikePrice": 24000, "lastPrice": 100.0, "impliedVolatility": 12.0,
+            "openInterest": 500, "changeinOpenInterest": 25, "totalTradedVolume": 1000,
+        }
+        return {expiry_key: self.EXPIRY, "strikePrice": 24000, "CE": dict(leg), "PE": dict(leg)}
+
+    @pytest.mark.parametrize("expiry_key", ["expiryDate", "expiryDates"])
+    def test_accepts_legacy_and_v3_row_keys(self, expiry_key):
+        # Legacy option-chain-indices rows carry "expiryDate";
+        # option-chain-v3 rows carry "expiryDates".
+        data = {"records": {"data": [self._record(expiry_key)]}}
+        df = process_nse_data(data, self.EXPIRY, current_price=24000)
+        assert list(df.index) == [24000]
+        assert df.loc[24000, "CE_OI"] == 500
+        assert df.loc[24000, "PE_LTP"] == 100.0
+
+    def test_other_expiries_are_filtered_out(self):
+        record = self._record("expiryDates")
+        record["expiryDates"] = "08-Jan-2030"
+        data = {"records": {"data": [record]}}
+        assert process_nse_data(data, self.EXPIRY, current_price=24000).empty
+
+    def test_no_string_columns_in_chain(self):
+        # The combined chain is formatted numerically in the UI, so it must
+        # not contain string columns like the old CE_Type/PE_Type.
+        data = {"records": {"data": [self._record("expiryDates")]}}
+        df = process_nse_data(data, self.EXPIRY, current_price=24000)
+        assert all(pd.api.types.is_numeric_dtype(t) for t in df.dtypes)
 
 
 class TestBuildFinalDf:
