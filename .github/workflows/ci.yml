@@ -24,3 +24,29 @@ jobs:
 
       - name: Run tests
         run: pytest -v
+
+  # Mirrors how Streamlit Community Cloud builds the app (Debian trixie base,
+  # apt packages from packages.txt, pip install from requirements.txt) so a
+  # broken apt pin or requirement fails the PR instead of the deploy.
+  streamlit-deploy-check:
+    runs-on: ubuntu-latest
+    container: debian:trixie-slim
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install apt packages from packages.txt
+        run: |
+          apt-get update
+          xargs -a packages.txt apt-get install -y --no-install-recommends
+
+      - name: Install Python dependencies
+        run: |
+          apt-get install -y --no-install-recommends python3 python3-venv python3-pip
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install -r requirements.txt
+
+      - name: Compile all sources
+        run: /tmp/venv/bin/python -m py_compile 1_💼_Portfolio_Pulse.py streamlit_app.py common/*.py pages/*.py scripts/*.py
+
+      - name: Import entrypoint dependencies
+        run: /tmp/venv/bin/python -c "import streamlit, pandas, numpy, plotly, duckdb, polars, yfinance, pypfopt, scipy"
