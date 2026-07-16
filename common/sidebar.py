@@ -7,15 +7,36 @@ import pandas as pd
 
 import yfinance as yf
 
+# Static fallback so the app still works when the Wikipedia scrape fails
+FALLBACK_SP500 = [
+    "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "META", "TSLA", "BRK-B",
+    "UNH", "JNJ", "JPM", "V", "PG", "XOM", "HD", "CVX", "MA", "ABBV", "PFE",
+    "AVGO", "COST", "DIS", "KO", "PEP", "TMO", "MRK", "WMT", "CSCO", "MCD",
+    "ACN", "ABT", "ADBE", "CRM", "LIN", "DHR", "NKE", "TXN", "NEE", "VZ",
+    "ORCL", "PM", "INTC", "WFC", "UPS", "BMY", "RTX", "QCOM", "HON", "AMD",
+    "T", "LOW", "UNP", "IBM", "SPGI", "GS", "CAT", "AMGN", "BA", "SBUX",
+    "INTU", "PLD", "BLK", "GE", "MDT", "ISRG", "AMT", "MS", "DE", "LMT",
+    "AXP", "BKNG", "GILD", "SYK", "ADI", "TJX", "MDLZ", "C", "MMC", "ADP",
+    "VRTX", "CVS", "SCHW", "MO", "CI", "REGN", "PGR", "SO", "ZTS", "CB",
+    "DUK", "BDX", "EOG", "ITW", "CL", "NOC", "CME", "FISV", "CSX", "ETN",
+]
+
+
+@st.cache_data(ttl=86400)
 def get_sp500_tickers():
+    """Scrape S&P 500 constituents from Wikipedia, cached for a day.
 
-    url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-    table = pd.read_html(url)
-    tickers = table[0]['Symbol'].tolist()
+    Falls back to a static list when the network or page layout fails.
+    """
+    try:
+        url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+        table = pd.read_html(url)
+        tickers = table[0]['Symbol'].tolist()
+        # Some tickers may have periods (e.g., BRK.B), which yfinance uses as dashes (e.g., BRK-B)
+        return [ticker.replace('.', '-') for ticker in tickers]
+    except Exception:
+        return FALLBACK_SP500
 
-    # Some tickers may have periods (e.g., BRK.B), which yfinance uses as dashes (e.g., BRK-B)
-    tickers = [ticker.replace('.', '-') for ticker in tickers]
-    return tickers
 
 # Common list of suggestions (could also be imported from another module)
 SP_500 = get_sp500_tickers()

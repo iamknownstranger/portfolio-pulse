@@ -1,15 +1,12 @@
 from datetime import date, timedelta
-import random
-import time
 
-import duckdb
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-import yfinance as yf
 from pypfopt import expected_returns, risk_models
 from pypfopt.efficient_frontier import EfficientFrontier
+from common.data import get_benchmark_data, get_price_data
 from common.sidebar import render_sidebar
 
 st.set_page_config(page_title="Portfolio Analyzer", page_icon="💼", layout="wide")
@@ -32,78 +29,7 @@ elif start_date > end_date:
 symbols_string = ", ".join(symbols)
 st.write(f"Your portfolio consists of {len(symbols)} stocks and their symbols are **{symbols_string}**")
 
-@st.cache_data(ttl=86400)
-def get_data(tickers, start, end, max_retries=3, retry_delay=5):
-    """
-    Fetches historical stock data from DuckDB or Yahoo Finance with retry logic.
-    """
-    # First, try to fetch data from the local DuckDB database.
-    try:
-        con = duckdb.connect("data/market_data.db")
-        query = f"""
-        SELECT date, symbol, close_price FROM market_data
-        WHERE symbol IN ({', '.join([f"'{ticker}'" for ticker in tickers])})
-        AND date BETWEEN '{start}' AND '{end}'
-        ORDER BY date;
-        """
-        df_duckdb = pd.DataFrame(con.execute(query).fetchall(), columns=['date', 'symbol', 'close_price'])
-        con.close()
-        if not df_duckdb.empty:
-            # Pivot the table to have symbols as columns
-            df_duckdb = df_duckdb.pivot(index='date', columns='symbol', values='close_price')
-            return df_duckdb
-    except Exception as e:
-        st.warning(f"DuckDB data fetch failed: {e}. Falling back to yfinance.")
-
-    # Fallback to yfinance if DuckDB fails or returns no data.
-    for attempt in range(max_retries):
-        try:
-            df_yf = yf.download(tickers, start=start, end=end, auto_adjust=False, multi_level_index=False)["Close"]
-            df_yf.index = df_yf.index.date
-            return df_yf.dropna(axis=1, how='all')
-        except Exception as e:
-            if 'rate limit' in str(e).lower() or 'too many requests' in str(e).lower():
-                if attempt < max_retries - 1:
-                    st.warning(f"Yahoo Finance rate limited. Retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                else:
-                    st.error("Too Many Requests from Yahoo Finance. Please try again later.")
-                    return pd.DataFrame()
-            else:
-                st.error(f"Error fetching data from yfinance: {e}")
-                return pd.DataFrame()
-    return pd.DataFrame()
-
-df = get_data(symbols, start_date, end_date)
-
-@st.cache_data(ttl=86400)
-def get_benchmark_data(symbol, start, end):
-    """
-    Fetches historical data for the selected benchmark index.
-    """
-    if symbol == "TOP100US":
-        # Logic to get the top 100 US companies by market cap and calculate an equal-weighted index.
-        df_companies = pd.read_csv("data/largest-companies-in-the-usa-by-market-cap.csv")
-        df_companies = df_companies.sort_values("marketcap", ascending=False).head(100)
-        tickers = df_companies["Symbol"].tolist()
-        try:
-            df_yf = yf.download(tickers, start=start, end=end, auto_adjust=False, multi_level_index=False)["Close"]
-            df_yf.index = pd.to_datetime(df_yf.index)
-            index_val = df_yf.mean(axis=1)
-            return index_val.dropna()
-        except Exception as e:
-            st.warning(f"Failed to fetch Top 100 US index data: {e}")
-            return pd.Series(dtype=float)
-    else:
-        try:
-            df_yf = yf.download(symbol, start=start, end=end)["Close"]
-            df_yf = df_yf.dropna()
-            df_yf.index = pd.to_datetime(df_yf.index)
-            return df_yf
-        except Exception as e:
-            st.warning(f"Failed to fetch benchmark data for {symbol}: {e}")
-            return pd.Series(dtype=float)
-
+df = get_price_data(symbols, start_date, end_date)
 
 benchmark_df = get_benchmark_data(benchmark_symbol, start_date, end_date)
 
@@ -259,3 +185,5 @@ if not df.empty and benchmark_df is not None and not benchmark_df.empty:
         file_name="benchmark_data.csv",
         mime="text/csv"
     )
+else:
+    st.warning("No price data available for the selected stocks and date range. Please adjust your selection and try again.")

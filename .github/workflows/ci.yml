@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Compile all sources
+        run: python -m py_compile 1_💼_Portfolio_Pulse.py streamlit_app.py common/*.py pages/*.py scripts/*.py
+
+      - name: Run tests
+        run: pytest -v

@@ -44,7 +44,7 @@
 
 4. Run the Streamlit app:
    ```sh
-   streamlit run app.py
+   streamlit run "1_💼_Portfolio_Pulse.py"
    ```
 
 ## Usage
@@ -60,6 +60,14 @@
 - A devcontainer is provided in the `.devcontainer/` directory for a consistent development environment.
 - Open the project in VS Code using the Remote - Containers extension or Codespaces.
 - The devcontainer automatically installs system packages from `packages.txt` and Python dependencies from `requirements.txt`.
+
+### Running Tests
+
+Install the dev dependencies and run pytest from the repository root:
+```sh
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## Environment Variables
 

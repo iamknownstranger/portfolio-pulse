@@ -1,49 +1,18 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import numpy as np
+from common.data import get_price_data, load_companies_csv
 from common.sidebar import render_sidebar
 from pypfopt import expected_returns, risk_models, EfficientFrontier, CLA
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
-
-import yfinance as yf
 
 st.set_page_config(page_title="Rebalancing & Optimization", page_icon="🔄", layout="wide")
 st.title("🔄 Rebalancing & Optimization")
 
 symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()
 
-# Updated to ensure calculations use real data from DuckDB or yfinance
-@st.cache_data(ttl=86400)
-def get_data(tickers, start, end):
-    try:
-        # Attempt to fetch data from DuckDB
-        query = f"""
-        SELECT date, symbol, close_price FROM market_data
-        WHERE symbol IN ({', '.join([f'\'{ticker}\'' for ticker in tickers])})
-        AND date BETWEEN '{start}' AND '{end}'
-        ORDER BY date;
-        """
-        df_duckdb = pd.DataFrame(con.execute(query).fetchall(), columns=['date', 'symbol', 'close_price'])
-        if not df_duckdb.empty:
-            df_duckdb = df_duckdb.pivot(index='date', columns='symbol', values='close_price')
-            return df_duckdb
-    except Exception as e:
-        st.warning(f"DuckDB data fetch failed: {e}. Falling back to yfinance.")
-
-    # Fallback to yfinance if DuckDB fails
-    try:
-        df_yf = yf.download(tickers, start=start, end=end, auto_adjust=False, multi_level_index=False)["Close"]
-        df_yf.index = df_yf.index.date
-        return df_yf.dropna(axis=1, how='all')
-    except Exception as e:
-        st.error(f"Error fetching data from yfinance: {e}")
-        return pd.DataFrame()
-
 # Load actual data
-df_companies = pd.read_csv("data/companiesmarketcap.com - Largest American companies by market capitalization.csv")
-df_companies["marketcap"] = pd.to_numeric(df_companies["marketcap"], errors='coerce')
+df_companies = load_companies_csv()
 
 # FILTER by sidebar selection if available
 if "Symbol" in df_companies.columns and symbols:
@@ -81,7 +50,7 @@ def calculate_sharpe_ratio(df):
     return sharpe_ratio
 
 # Fetch data for the selected symbols
-data = get_data(symbols, start_date, end_date)
+data = get_price_data(symbols, start_date, end_date)
 if not data.empty:
     pre_optimization_sharpe = calculate_sharpe_ratio(data)
 
@@ -89,7 +58,11 @@ if not data.empty:
     mean_returns = expected_returns.mean_historical_return(data)
     covariance_matrix = risk_models.sample_cov(data)
     ef = EfficientFrontier(mean_returns, covariance_matrix)
-    optimized_weights = ef.max_sharpe()
+    try:
+        ef.max_sharpe()
+    except Exception as e:
+        st.warning(f"Max-Sharpe optimization failed ({e}). Falling back to minimum volatility.")
+        ef.min_volatility()
     cleaned_weights = ef.clean_weights()
 
     # Calculate Post-Optimization Sharpe Ratio
@@ -108,53 +81,34 @@ if not data.empty:
         st.metric(label=symbol, value=f"{weight:.2%}")
 
     # Generate Efficient Frontier using PyPortfolioOpt
-    cla = CLA(mean_returns, covariance_matrix)
-    cla.max_sharpe()
-    efficient_frontier = cla.efficient_frontier()
+    try:
+        cla = CLA(mean_returns, covariance_matrix)
+        cla.max_sharpe()
+        efficient_frontier = cla.efficient_frontier()
 
-    # Extract risks and returns correctly
-    risks = [point[0] for point in efficient_frontier]
-    returns = [point[1] for point in efficient_frontier]
+        # Extract risks and returns correctly
+        risks = [point[0] for point in efficient_frontier]
+        returns = [point[1] for point in efficient_frontier]
 
-    # Plot the Efficient Frontier using Plotly
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=risks, y=returns, mode='lines', name='Efficient Frontier'))
-    fig.update_layout(
-        title="Efficient Frontier",
-        xaxis_title="Volatility (Risk)",
-        yaxis_title="Expected Return",
-        template="plotly_white"
-    )
+        # Plot the Efficient Frontier using Plotly
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=risks, y=returns, mode='lines', name='Efficient Frontier'))
+        fig.update_layout(
+            title="Efficient Frontier",
+            xaxis_title="Volatility (Risk)",
+            yaxis_title="Expected Return",
+            template="plotly_white"
+        )
 
-    # Display the plot in Streamlit
-    st.subheader("Efficient Frontier")
-    st.plotly_chart(fig, use_container_width=True)
+        # Display the plot in Streamlit
+        st.subheader("Efficient Frontier")
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.warning(f"Could not compute the efficient frontier for this selection: {e}")
+
+else:
+    st.warning("No price data available for the selected stocks and date range, so optimization is unavailable.")
 
 st.subheader("Optimization Tools")
 st.write("User-defined constraints and advanced optimization options will be provided here.")
-
-# --- Fetch benchmark index data ---
-def get_top100us_index(start_date, end_date):
-    df = pd.read_csv("data/largest-companies-in-the-usa-by-market-cap.csv")
-    df = df.sort_values("marketcap", ascending=False).head(100)
-    tickers = df["Symbol"].tolist()
-    try:
-        df_yf = yf.download(tickers, start=start_date, end=end_date, auto_adjust=False, multi_level_index=False)["Close"]
-        df_yf.index = pd.to_datetime(df_yf.index)
-        index_val = df_yf.mean(axis=1)
-        return index_val.dropna()
-    except Exception as e:
-        st.warning(f"Failed to fetch Top 100 US index data: {e}")
-        return pd.Series(dtype=float)
-
-benchmark_df = None
-if benchmark_symbol == "TOP100US":
-    benchmark_df = get_top100us_index(start_date, end_date)
-elif benchmark_symbol:
-    try:
-        benchmark_df = yf.download(benchmark_symbol, start=start_date, end=end_date)["Close"]
-        benchmark_df = benchmark_df.dropna()
-        benchmark_df.index = pd.to_datetime(benchmark_df.index)
-    except Exception as e:
-        st.warning(f"Failed to fetch benchmark data: {e}")
 
