@@ -3,46 +3,22 @@ import pandas as pd
 import plotly.express as px
 import numpy as np
 from scipy.stats import norm
+from common.data import get_price_data, load_companies_csv
 from common.sidebar import render_sidebar
-import yfinance as yf
 
 st.set_page_config(page_title="Risk Wall", page_icon="⚠️", layout="wide")
 st.title("⚠️ Risk Wall")
 
 symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()
 
-@st.cache_data(ttl=86400)
-def get_data(tickers, start, end):
-    try:
-        # Attempt to fetch data from DuckDB
-        query = f"""
-        SELECT date, symbol, close_price FROM market_data
-        WHERE symbol IN ({', '.join([f'\'{ticker}\'' for ticker in tickers])})
-        AND date BETWEEN '{start}' AND '{end}'
-        ORDER BY date;
-        """
-        df_duckdb = pd.DataFrame(con.execute(query).fetchall(), columns=['date', 'symbol', 'close_price'])
-        if not df_duckdb.empty:
-            df_duckdb = df_duckdb.pivot(index='date', columns='symbol', values='close_price')
-            return df_duckdb
-    except Exception as e:
-        st.warning(f"DuckDB data fetch failed: {e}. Falling back to yfinance.")
+df = get_price_data(symbols, start_date, end_date)
 
-    # Fallback to yfinance if DuckDB fails
-    try:
-        df_yf = yf.download(tickers, start=start, end=end, auto_adjust=False, multi_level_index=False)["Close"]
-        df_yf.index = df_yf.index.date
-        return df_yf.dropna(axis=1, how='all')
-    except Exception as e:
-        st.error(f"Error fetching data from yfinance: {e}")
-        return pd.DataFrame()
-
-df = get_data(symbols, start_date, end_date)
+if df.empty:
+    st.warning("No price data available for the selected stocks and date range. Please adjust your selection and try again.")
+    st.stop()
 
 # Load actual data
-df_companies = pd.read_csv("data/companiesmarketcap.com - Largest American companies by market capitalization.csv")
-df_companies["marketcap"] = pd.to_numeric(df_companies["marketcap"], errors='coerce')
-df_companies["price (INR)"] = pd.to_numeric(df_companies["price (INR)"], errors='coerce')
+df_companies = load_companies_csv()
 
 # FILTER: keep only selected symbols if provided and if the CSV has a "Symbol" column.
 if "Symbol" in df_companies.columns and symbols:
@@ -121,33 +97,8 @@ st.metric("Max Stress Drawdown", f"{max_stress_drawdown:.2f}%")
 # --- Portfolio Volatility Plot ---
 rolling_vol = portfolio_returns.rolling(window=30).std() * np.sqrt(252) * 100
 st.subheader("Rolling Portfolio Volatility (30-day)")
-fig_vol = px.line(x=rolling_vol.index, y=rolling_vol, 
+fig_vol = px.line(x=rolling_vol.index, y=rolling_vol,
                   title="30-Day Rolling Portfolio Volatility",
                   labels={"x": "Date", "y": "Volatility (%)"})
 st.plotly_chart(fig_vol, use_container_width=True)
-
-# --- Fetch benchmark index data ---
-def get_top100us_index(start_date, end_date):
-    df = pd.read_csv("data/largest-companies-in-the-usa-by-market-cap.csv")
-    df = df.sort_values("marketcap", ascending=False).head(100)
-    tickers = df["Symbol"].tolist()
-    try:
-        df_yf = yf.download(tickers, start=start_date, end=end_date, auto_adjust=False, multi_level_index=False)["Close"]
-        df_yf.index = pd.to_datetime(df_yf.index)
-        index_val = df_yf.mean(axis=1)
-        return index_val.dropna()
-    except Exception as e:
-        st.warning(f"Failed to fetch Top 100 US index data: {e}")
-        return pd.Series(dtype=float)
-
-benchmark_df = None
-if benchmark_symbol == "TOP100US":
-    benchmark_df = get_top100us_index(start_date, end_date)
-elif benchmark_symbol:
-    try:
-        benchmark_df = yf.download(benchmark_symbol, start=start_date, end=end_date)["Close"]
-        benchmark_df = benchmark_df.dropna()
-        benchmark_df.index = pd.to_datetime(benchmark_df.index)
-    except Exception as e:
-        st.warning(f"Failed to fetch benchmark data: {e}")
 

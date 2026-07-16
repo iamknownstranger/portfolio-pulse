@@ -1,14 +1,24 @@
+from datetime import timedelta
+
 import duckdb
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import polars as pl
 import streamlit as st
-import plotly.graph_objects as go
-import pandas as pd
 import yfinance as yf
-from datetime import datetime, timedelta
 
+from common.data import get_benchmark_data
 from common.sidebar import render_sidebar
 
-con = duckdb.connect("data/market_cap_data.db")
+
+@st.cache_resource
+def get_connection():
+    return duckdb.connect("data/market_cap_data.db", read_only=True)
+
+
+con = get_connection()
 INCEPTION_DATE = con.execute("SELECT min(date) FROM market_cap_data").fetchone()[0]
 
 def compute_equal_weighted_index(df):
@@ -51,42 +61,32 @@ def get_date_range(period, end_date):
         return end_date.replace(month=1, day=1), end_date 
     return INCEPTION_DATE, end_date
 
-# Updated to ensure calculations use real data from DuckDB or yfinance
 def fetch_data(con, start_date, end_date, symbols_filter=None):
-    # Build symbol filter if symbols are specified.
+    # Symbols and dates come from user input — bind them, never interpolate.
+    params = [str(start_date), str(end_date)]
     symbol_clause = ""
     if symbols_filter:
-        # Format each symbol with quotes and comma-separated
-        symbols_str = ", ".join([f"'{s}'" for s in symbols_filter])
-        symbol_clause = f" AND symbol IN ({symbols_str})"
+        placeholders = ", ".join(["?"] * len(symbols_filter))
+        symbol_clause = f" AND symbol IN ({placeholders})"
+        params.extend(symbols_filter)
     query = f"""
-            SELECT * FROM market_cap_data
-            WHERE date BETWEEN '{start_date}' AND '{end_date}' {symbol_clause}
+            SELECT symbol, date, market_cap FROM market_cap_data
+            WHERE date BETWEEN ? AND ? {symbol_clause}
             ORDER BY date, market_cap DESC
         """
-    return pl.DataFrame(con.execute(query).fetchall(), schema=["symbol", "date", "market_cap"])
-
-# Ensure fallback to yfinance if DuckDB data is unavailable
-def fetch_yfinance_data(symbols, start_date, end_date):
-    try:
-        df_yf = yf.download(symbols, start=start_date, end=end_date, auto_adjust=False, multi_level_index=False)["Close"]
-        df_yf.index = df_yf.index.date
-        return df_yf.dropna(axis=1, how='all')
-    except Exception as e:
-        st.error(f"Error fetching data from yfinance: {e}")
-        return pd.DataFrame()
+    return pl.DataFrame(con.execute(query, params).fetchall(), schema=["symbol", "date", "market_cap"])
 
 # === App Layout ===
 st.set_page_config(page_title="Index Insights", page_icon="📈", layout="wide")
 st.title("📊 Index Insights")
 symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()
 
-
-# Move DB connection and max_date definition before filters
-max_date = con.execute("SELECT MAX(date) FROM market_cap_data").fetchone()[0]
-INCEPTION_DATE = con.execute("SELECT min(date) FROM market_cap_data").fetchone()[0]
-
 data = fetch_data(con, start_date, end_date, symbols_filter=symbols)
+
+if data.is_empty():
+    st.warning("No index data available for the selected symbols and date range. "
+               f"The local database covers {INCEPTION_DATE} onwards.")
+    st.stop()
 
 # === Calculations ===
 
@@ -110,7 +110,6 @@ df_index_pd["rolling_volatility_30d"] = df_index_pd["daily_pct_change"].rolling(
 df_index_pd["drawdown"] = (df_index_pd["index_value"] - df_index_pd["index_value"].cummax()) / df_index_pd["index_value"].cummax() * 100
 
 # --- New Metrics ---
-import numpy as np
 # Downside volatility for Sortino
 index_daily = df_index_pd["daily_pct_change"].dropna()
 downside_std = index_daily[index_daily < 0].std() * np.sqrt(252)
@@ -118,23 +117,24 @@ sortino_ratio = (df_index_pd["daily_pct_change"].mean() * 252) / downside_std if
 calmar_ratio = (cagr / abs(max_drawdown)) if max_drawdown != 0 else np.nan
 
 # Beta and correlation versus S&P500
-sp500_data = yf.download("^GSPC", start=df_index_pd["date"].iloc[0], end=df_index_pd["date"].iloc[-1])
-sp500_data["daily_return"] = sp500_data["Close"].pct_change()
-sp500_daily = sp500_data["daily_return"].dropna()
-# --- Ensure date alignment for merging ---
+beta, corr_sp500 = np.nan, np.nan
 df_index_pd["date"] = pd.to_datetime(df_index_pd["date"]).dt.date
-sp500_daily = sp500_daily.reset_index()
-sp500_daily["Date"] = pd.to_datetime(sp500_daily["Date"]).dt.date
-merged = pd.merge(
-    df_index_pd[["date", "daily_pct_change"]],
-    sp500_daily.rename(columns={'Date': 'date', 'daily_return': 'daily_return'}),
-    on="date", how="inner"
-)
-if not merged.empty:
-    beta = merged["daily_pct_change"].cov(merged["daily_return"]) / merged["daily_return"].var()
-    corr_sp500 = merged["daily_pct_change"].corr(merged["daily_return"])
+sp500_data = yf.download("^GSPC", start=df_index_pd["date"].iloc[0], end=df_index_pd["date"].iloc[-1],
+                         auto_adjust=False, multi_level_index=False)
+if not sp500_data.empty and "Close" in sp500_data.columns:
+    sp500_daily = sp500_data["Close"].pct_change().dropna().reset_index()
+    sp500_daily.columns = ["date", "daily_return"]
+    sp500_daily["date"] = pd.to_datetime(sp500_daily["date"]).dt.date
+    merged = pd.merge(
+        df_index_pd[["date", "daily_pct_change"]],
+        sp500_daily,
+        on="date", how="inner"
+    )
+    if not merged.empty and merged["daily_return"].var():
+        beta = merged["daily_pct_change"].cov(merged["daily_return"]) / merged["daily_return"].var()
+        corr_sp500 = merged["daily_pct_change"].corr(merged["daily_return"])
 else:
-    beta, corr_sp500 = np.nan, np.nan
+    st.warning("Could not fetch S&P 500 data — beta and correlation are unavailable.")
 
 # === Summary Metrics Display ===
 st.subheader("📊 Summary Metrics")
@@ -312,23 +312,24 @@ if not portfolio_df.empty:
     else:
         portfolio_cagr = 0
     # Beta/correlation vs S&P500
-    sp500_data = yf.download("^GSPC", start=portfolio_df.index[0], end=portfolio_df.index[-1])
-    sp500_data["daily_return"] = sp500_data["Close"].pct_change()
-    sp500_daily = sp500_data["daily_return"].dropna()
-    # --- Fix: Ensure both DataFrames have 'date' column for merging ---
-    pf_df = portfolio_daily.reset_index().rename(columns={portfolio_daily.index.name or 'index': 'date', 0: 'portfolio_daily'})
-    sp500_df = sp500_daily.reset_index().rename(columns={sp500_daily.index.name or 'index': 'date', 0: 'daily_return'})
-    merged_pf = pd.merge(
-        pf_df,
-        sp500_df,
-        on="date", how="inner"
-    )
-    if not merged_pf.empty:
-        print(merged_pf)
-        beta_pf = merged_pf["portfolio_daily"].cov(merged_pf["daily_return"]) / merged_pf["daily_return"].var()
-        corr_pf = merged_pf["portfolio_daily"].corr(merged_pf["daily_return"])
-    else:
-        beta_pf, corr_pf = np.nan, np.nan
+    beta_pf, corr_pf = np.nan, np.nan
+    sp500_data = yf.download("^GSPC", start=portfolio_df.index[0], end=portfolio_df.index[-1],
+                             auto_adjust=False, multi_level_index=False)
+    if not sp500_data.empty and "Close" in sp500_data.columns:
+        sp500_daily = sp500_data["Close"].pct_change().dropna()
+        # --- Ensure both DataFrames have 'date' column for merging ---
+        pf_df = portfolio_daily.reset_index()
+        pf_df.columns = ["date", "portfolio_daily"]
+        sp500_df = sp500_daily.reset_index()
+        sp500_df.columns = ["date", "daily_return"]
+        merged_pf = pd.merge(
+            pf_df,
+            sp500_df,
+            on="date", how="inner"
+        )
+        if not merged_pf.empty and merged_pf["daily_return"].var():
+            beta_pf = merged_pf["portfolio_daily"].cov(merged_pf["daily_return"]) / merged_pf["daily_return"].var()
+            corr_pf = merged_pf["portfolio_daily"].corr(merged_pf["daily_return"])
     # --- Display metrics side by side ---
     st.subheader("📊 Portfolio vs Index Metrics")
     cols = st.columns(7)
@@ -344,7 +345,6 @@ if not portfolio_df.empty:
     st.subheader("Portfolio Correlation Matrix")
     corr_matrix = portfolio_df.corr(method='pearson')
     st.dataframe(corr_matrix)
-    import plotly.express as px
     corr_heatmap = px.imshow(corr_matrix, title='Correlation between Portfolio Stocks')
     st.plotly_chart(corr_heatmap, use_container_width=True)
     st.subheader("Portfolio Daily Returns Distribution")
@@ -354,32 +354,6 @@ else:
     st.warning("No valid portfolio data available for comparison. Please check your stock selection.")
 
 # === Dynamic Benchmark Selection ===
-# Helper to fetch benchmark data based on symbol
-@st.cache_data(ttl=86400)
-def get_benchmark_data(symbol, start, end):
-    if symbol == "TOP100US":
-        # Top 100 US by market cap (equal-weighted)
-        df = pd.read_csv("data/largest-companies-in-the-usa-by-market-cap.csv")
-        df = df.sort_values("marketcap", ascending=False).head(100)
-        tickers = df["Symbol"].tolist()
-        try:
-            df_yf = yf.download(tickers, start=start, end=end, auto_adjust=False, multi_level_index=False)["Close"]
-            df_yf.index = pd.to_datetime(df_yf.index)
-            index_val = df_yf.mean(axis=1)
-            return index_val.dropna()
-        except Exception as e:
-            st.warning(f"Failed to fetch Top 100 US index data: {e}")
-            return pd.Series(dtype=float)
-    else:
-        try:
-            df_yf = yf.download(symbol, start=start, end=end)["Close"]
-            df_yf = df_yf.dropna()
-            df_yf.index = pd.to_datetime(df_yf.index)
-            return df_yf
-        except Exception as e:
-            st.warning(f"Failed to fetch benchmark data: {e}")
-            return pd.Series(dtype=float)
-
 benchmark_series = get_benchmark_data(benchmark_symbol, start_date, end_date)
 
 # --- Portfolio vs Benchmark Performance & Analytics ---
@@ -415,11 +389,11 @@ if not portfolio_df.empty and not benchmark_series.empty:
     # Benchmark metrics
     benchmark_cum_return = (benchmark_cum.iloc[-1] - 1) * 100 if not benchmark_cum.empty else 0.0
     benchmark_vol = benchmark_daily.std() * np.sqrt(252) * 100
-    if isinstance(downside_std_bm, (float, int, np.floating, np.integer)):
-        notnull = not pd.isnull(downside_std_bm)
-    else:
-        notnull = pd.notnull(downside_std_bm).all()
-    benchmark_sortino = (benchmark_daily.mean() * 252) / downside_std_bm if notnull and downside_std_bm != 0 else np.nan
+    downside_std_bm = benchmark_daily[benchmark_daily < 0].std() * np.sqrt(252)
+    benchmark_sortino = (
+        (benchmark_daily.mean() * 252) / downside_std_bm
+        if pd.notnull(downside_std_bm) and downside_std_bm != 0 else np.nan
+    )
     # Beta/correlation vs benchmark (dynamic)
     pf_df = portfolio_daily.reset_index().rename(columns={portfolio_daily.index.name or 'index': 'date', 0: 'portfolio_daily'})
     bm_df = benchmark_daily.reset_index().rename(columns={benchmark_daily.index.name or 'index': 'date', 0: 'benchmark_daily'})
@@ -448,7 +422,6 @@ if not portfolio_df.empty and not benchmark_series.empty:
     st.subheader("Portfolio Correlation Matrix")
     corr_matrix = portfolio_df.corr(method='pearson')
     st.dataframe(corr_matrix)
-    import plotly.express as px
     corr_heatmap = px.imshow(corr_matrix, title='Correlation between Portfolio Stocks')
     st.plotly_chart(corr_heatmap, use_container_width=True)
     st.subheader("Portfolio Daily Returns Distribution")

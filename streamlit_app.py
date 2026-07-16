@@ -97,7 +97,7 @@ with st.form(key='form'):
             st.warning("Start date and end date can't be the same")
 
         elif start_date > end_date:
-            st.warning("Start date cannot be greater than start date")
+            st.warning("Start date cannot be greater than end date")
         symbols_string = ", ".join(symbols)
         st.write(
             f"Your portfolio consists for {len(symbols)} stocks and their symbols are **{symbols_string}**")
