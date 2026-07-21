@@ -12,13 +12,6 @@ from common.options import (
     process_yfinance_data,
 )
 
-# --- PAGE CONFIGURATION ---
-st.set_page_config(
-    page_title="Option Chain Analysis",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
 # --- CUSTOM STYLING ---
 st.markdown("""
 <style>
@@ -55,7 +48,9 @@ INDEX_SYMBOLS = {
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
     "Accept-Language": "en-US,en;q=0.5",
-    "Accept-Encoding": "gzip, deflate, br",
+    # No explicit Accept-Encoding: requests advertises only codings it can
+    # decode. Hardcoding "br" made NSE reply brotli, which fails without the
+    # optional brotli package installed.
 }
 
 # --- DATA FETCHING & PROCESSING ---
@@ -70,24 +65,49 @@ def get_current_price(yf_symbol):
     except Exception:
         return None
 
+def _nse_session():
+    """Requests session with the cookies NSE requires for its JSON API."""
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    session.get("https://www.nseindia.com", timeout=10)  # Initialize session
+    return session
+
 @st.cache_data(ttl=300)
-def fetch_option_data(index_key):
+def fetch_option_data(index_key, expiry=None):
     """
     Fetches option chain data using a primary (NSE) and secondary (yfinance) source.
     Returns the data, the source it came from, and underlying price.
+
+    NSE's option-chain-v3 API serves one expiry per request ('%d-%b-%Y'
+    format); when expiry is None the nearest one is used. The response's
+    records.expiryDates still lists every available expiry.
     """
     nse_symbol = INDEX_SYMBOLS[index_key]["nse"]
     yf_symbol = INDEX_SYMBOLS[index_key]["yf"]
-    
+
     # --- PRIMARY SOURCE: NSE ---
     try:
-        url = f"https://www.nseindia.com/api/option-chain-indices?symbol={nse_symbol}"
-        session = requests.Session()
-        session.headers.update(HEADERS)
-        session.get("https://www.nseindia.com", timeout=10) # Initialize session
-        response = session.get(url, timeout=15)
+        session = _nse_session()
+        if expiry is None:
+            # The old option-chain-indices endpoint (all expiries in one
+            # response) was retired; expiries now come from contract-info.
+            info = session.get(
+                f"https://www.nseindia.com/api/option-chain-contract-info?symbol={nse_symbol}",
+                timeout=15,
+            )
+            info.raise_for_status()
+            expiry_dates = info.json().get("expiryDates", [])
+            if not expiry_dates:
+                raise ValueError("NSE returned no expiry dates")
+            expiry = expiry_dates[0]
+        response = session.get(
+            f"https://www.nseindia.com/api/option-chain-v3?type=Indices&symbol={nse_symbol}&expiry={expiry}",
+            timeout=15,
+        )
         response.raise_for_status()
         data = response.json()
+        if not data.get("records", {}).get("data"):
+            raise ValueError(f"NSE returned no option data for expiry {expiry}")
         st.session_state.data_source = "NSE (Live)"
         return data, "NSE", data.get('records', {}).get('underlyingValue')
     except Exception as e:
@@ -99,7 +119,7 @@ def fetch_option_data(index_key):
         expiry_dates = ticker.options
         if not expiry_dates:
             return None, "Error", None
-        
+
         # Select the nearest expiry date for yfinance data
         chain = ticker.option_chain(expiry_dates[0])
         st.session_state.data_source = "yfinance (Fallback)"
@@ -185,7 +205,7 @@ def show_trading_insights(df, current_price):
     elif pcr < 0.7: sentiment, emoji = "Bearish", "🔴"
     else: sentiment, emoji = "Neutral / Range-bound", "🟡"
     
-    atm_strike_row = df.iloc[(df.index - current_price).abs().argsort()]
+    atm_strike_row = df.iloc[(df.index.to_series() - current_price).abs().argsort()]
     if not atm_strike_row.empty:
         avg_atm_iv = (atm_strike_row['CE_IV'].iloc[0] + atm_strike_row['PE_IV'].iloc[0]) / 2
         if avg_atm_iv > 25: iv_condition = "High - Option premiums are expensive. Favorable for sellers."
@@ -243,7 +263,7 @@ def find_strategic_options(df, current_price):
             st.dataframe(top_calls[call_display_cols].head(3).style.format({
                 'CE_LTP': '₹{:,.2f}', 'CE_IV': '{:.2f}%', 'CE_Delta': '{:.2f}',
                 'CE_Theta': '₹{:,.2f}', 'Score': '{:.2f}'
-            }).background_gradient(cmap='Greens', subset=['Score']), use_container_width=True)
+            }), use_container_width=True)
         else:
             st.write("No suitable calls found.")
             
@@ -253,7 +273,7 @@ def find_strategic_options(df, current_price):
             st.dataframe(top_puts[put_display_cols].head(3).style.format({
                 'PE_LTP': '₹{:,.2f}', 'PE_IV': '{:.2f}%', 'PE_Delta': '{:.2f}',
                 'PE_Theta': '₹{:,.2f}', 'Score': '{:.2f}'
-            }).background_gradient(cmap='Reds', subset=['Score']), use_container_width=True)
+            }), use_container_width=True)
         else:
             st.write("No suitable puts found.")
 
@@ -297,6 +317,12 @@ selected_display_expiry = header_cols[1].selectbox("Select Expiry Date", display
 selected_raw_expiry = [d for d, display_d in raw_to_display_map.items() if display_d == selected_display_expiry][0]
 
 if source == "NSE":
+    # option-chain-v3 serves a single expiry per request, so refetch for the
+    # user's selection (cached per index+expiry).
+    raw_data, source, underlying_price = fetch_option_data(selected_index, selected_raw_expiry)
+    if source != "NSE" or raw_data is None or underlying_price is None:
+        st.error(f"Could not fetch option data for expiry {selected_display_expiry}. Please try another expiry.")
+        st.stop()
     df = process_nse_data(raw_data, selected_raw_expiry, underlying_price)
 else: # yfinance
     chain = yf.Ticker(INDEX_SYMBOLS[selected_index]["yf"]).option_chain(selected_raw_expiry)

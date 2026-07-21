@@ -5,7 +5,6 @@ from common.data import load_companies_csv
 from common.sidebar import render_sidebar
 
 
-st.set_page_config(page_title="Holdings & Exposure", page_icon="📋", layout="wide")
 st.title("📋 Holdings & Exposure")
 
 symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()

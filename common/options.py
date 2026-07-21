@@ -58,8 +58,10 @@ def build_final_df(options_list, expiry_date):
     if not options_list:
         return pd.DataFrame()
     df = pd.DataFrame(options_list)
-    df_calls = df[df["Type"] == "CE"].set_index("Strike").add_prefix("CE_")
-    df_puts = df[df["Type"] == "PE"].set_index("Strike").add_prefix("PE_")
+    # Drop Type after splitting: the CE_/PE_ prefixes carry it, and keeping a
+    # string column breaks numeric formatting of the combined frame.
+    df_calls = df[df["Type"] == "CE"].drop(columns="Type").set_index("Strike").add_prefix("CE_")
+    df_puts = df[df["Type"] == "PE"].drop(columns="Type").set_index("Strike").add_prefix("PE_")
     full_df = pd.concat([df_calls, df_puts], axis=1).sort_index()
     full_df.columns.name = expiry_date
     return full_df.fillna(0)
@@ -73,7 +75,10 @@ def process_nse_data(data, selected_expiry, current_price):
     time_to_expiry = (expiry_dt - datetime.now() + timedelta(hours=8)).days / 365.0
 
     for record in records:
-        if record.get("expiryDate") != selected_expiry:
+        # Legacy NSE rows carry "expiryDate"; the option-chain-v3 API uses
+        # "expiryDates" (same '%d-%b-%Y' format, one expiry per response).
+        record_expiry = record.get("expiryDate", record.get("expiryDates"))
+        if record_expiry != selected_expiry:
             continue
         for opt_type in ["CE", "PE"]:
             option_data = record.get(opt_type, {})

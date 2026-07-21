@@ -6,7 +6,6 @@ from common.sidebar import render_sidebar
 from pypfopt import expected_returns, risk_models, EfficientFrontier, CLA
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="Rebalancing & Optimization", page_icon="🔄", layout="wide")
 st.title("🔄 Rebalancing & Optimization")
 
 symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()

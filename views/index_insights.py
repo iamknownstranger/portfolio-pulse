@@ -77,7 +77,6 @@ def fetch_data(con, start_date, end_date, symbols_filter=None):
     return pl.DataFrame(con.execute(query, params).fetchall(), schema=["symbol", "date", "market_cap"])
 
 # === App Layout ===
-st.set_page_config(page_title="Index Insights", page_icon="📈", layout="wide")
 st.title("📊 Index Insights")
 symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()
 
@@ -394,19 +393,22 @@ if not portfolio_df.empty and not benchmark_series.empty:
         (benchmark_daily.mean() * 252) / downside_std_bm
         if pd.notnull(downside_std_bm) and downside_std_bm != 0 else np.nan
     )
-    # Beta/correlation vs benchmark (dynamic)
-    pf_df = portfolio_daily.reset_index().rename(columns={portfolio_daily.index.name or 'index': 'date', 0: 'portfolio_daily'})
-    bm_df = benchmark_daily.reset_index().rename(columns={benchmark_daily.index.name or 'index': 'date', 0: 'benchmark_daily'})
+    # Beta/correlation vs benchmark (dynamic).
+    # Set column names explicitly: reset_index() names the value column after
+    # the series (e.g. the ticker symbol), so rename-by-key silently misses.
+    beta_pf, corr_pf = np.nan, np.nan
+    pf_df = portfolio_daily.reset_index()
+    pf_df.columns = ["date", "portfolio_daily"]
+    bm_df = benchmark_daily.reset_index()
+    bm_df.columns = ["date", "benchmark_daily"]
     merged_pf = pd.merge(
         pf_df,
         bm_df,
         on="date", how="inner"
     )
-    if not merged_pf.empty:
+    if not merged_pf.empty and merged_pf["benchmark_daily"].var():
         beta_pf = merged_pf["portfolio_daily"].cov(merged_pf["benchmark_daily"]) / merged_pf["benchmark_daily"].var()
         corr_pf = merged_pf["portfolio_daily"].corr(merged_pf["benchmark_daily"])
-    else:
-        beta_pf, corr_pf = np.nan, np.nan
     # --- Display metrics side by side ---
     st.subheader("📊 Portfolio vs Benchmark Metrics")
     cols = st.columns(7)

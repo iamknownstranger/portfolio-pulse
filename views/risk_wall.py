@@ -6,7 +6,6 @@ from scipy.stats import norm
 from common.data import get_price_data, load_companies_csv
 from common.sidebar import render_sidebar
 
-st.set_page_config(page_title="Risk Wall", page_icon="⚠️", layout="wide")
 st.title("⚠️ Risk Wall")
 
 symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()
