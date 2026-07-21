@@ -1,11 +1,11 @@
 import random
 from datetime import date, timedelta
+
+import pandas as pd
 import streamlit as st
 from streamlit_tags import st_tags
-import pandas as pd
 
-
-import yfinance as yf
+from common.dates import resolve_start_date
 
 # Static fallback so the app still works when the Wikipedia scrape fails
 FALLBACK_SP500 = [
@@ -61,7 +61,8 @@ def render_sidebar():
         start_date = st.date_input('Start date', value=start_date_value)
         end_date = st.date_input('End date', value=end_date_value)
         period = st.radio(
-            "Period", ["WTD", "MTD", "YTD", "ITD"], horizontal=True, index=3)
+            "Period", ["WTD", "MTD", "YTD", "ITD"], horizontal=True, index=3,
+            help="WTD/MTD/YTD derive the start date from the end date; ITD uses the dates above.")
         # --- Enhanced benchmark index selector ---
         benchmark_options = {
             "S&P 500": "^GSPC",
@@ -99,6 +100,7 @@ def render_sidebar():
         </style>
     """, unsafe_allow_html=True)
     st.sidebar.markdown('<div class="sidebar-footer">Built with 💓 by Chandra Sekhar Mullu</div>', unsafe_allow_html=True)
-    # Return benchmark symbol as well
+    # Apply the period selection, then return benchmark symbol as well
+    start_date = resolve_start_date(period, start_date, end_date)
     return symbols, start_date.isoformat(), end_date.isoformat(), period, benchmark_options[benchmark_name], benchmark_name
 

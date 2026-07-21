@@ -6,7 +6,6 @@
 - [Installation](#installation)
 - [Usage](#usage)
 - [Development](#development)
-- [Environment Variables](#environment-variables)
 - [Contributions](#contributions)
 - [License](#license)
 
@@ -77,14 +76,6 @@ Install the dev dependencies and run pytest from the repository root:
 ```sh
 pip install -r requirements-dev.txt
 pytest
-```
-
-## Environment Variables
-
-Create a `.env` file in the root directory with your API keys:
-```
-ALPHAVENTAGE=your_alpha_vantage_key
-FMP_API_KEY=your_fmp_api_key
 ```
 
 ## Contributions

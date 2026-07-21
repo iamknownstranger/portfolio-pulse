@@ -22,8 +22,10 @@ if not end_date:
     end_date = date.today()
 if start_date == end_date:
     st.warning("Start date and end date can't be the same")
+    st.stop()
 elif start_date > end_date:
     st.warning("Start date cannot be greater than end date")
+    st.stop()
 
 symbols_string = ", ".join(symbols)
 st.write(f"Your portfolio consists of {len(symbols)} stocks and their symbols are **{symbols_string}**")
