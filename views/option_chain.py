@@ -12,13 +12,6 @@ from common.options import (
     process_yfinance_data,
 )
 
-# --- PAGE CONFIGURATION ---
-st.set_page_config(
-    page_title="Option Chain Analysis",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
 # --- CUSTOM STYLING ---
 st.markdown("""
 <style>

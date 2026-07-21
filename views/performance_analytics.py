@@ -6,7 +6,6 @@ import streamlit as st
 from common.data import get_benchmark_data, get_price_data, load_companies_csv
 from common.sidebar import render_sidebar
 
-st.set_page_config(page_title="Performance Analytics", page_icon="📊", layout="wide")
 st.title("📊 Performance Analytics")
 
 symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()

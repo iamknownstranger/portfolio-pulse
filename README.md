@@ -15,6 +15,15 @@
 
 ## Features
 
+The app is organized by asset class:
+
+- **Equities — Linear:** Portfolio Pulse, Index Insights, Risk Wall, Performance Analytics, Rebalancing & Optimization, Holdings & Exposure.
+- **Equities — Non-Linear:** Option Chain analysis with Greeks, Max Pain, and OI/IV charts (NSE indices).
+- **Fixed Income:** US Treasury yield curve, curve slope/inversion, and macro gauges (DXY, VIX).
+- **Commodities:** Futures performance, rolling volatility, and cross-commodity correlations.
+
+Highlights:
+
 - **Stock Selection:** Easily add stocks from the S&P 500 to your portfolio for analysis.
 - **Historical Data Analysis:** Visualize historical closing prices, daily returns, and cumulative returns.
 - **Equal-Weighted Index Dashboard:** View interactive performance plots, summary metrics, rolling volatility and drawdown charts, and composition changes.

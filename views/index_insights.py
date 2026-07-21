@@ -77,7 +77,6 @@ def fetch_data(con, start_date, end_date, symbols_filter=None):
     return pl.DataFrame(con.execute(query, params).fetchall(), schema=["symbol", "date", "market_cap"])
 
 # === App Layout ===
-st.set_page_config(page_title="Index Insights", page_icon="📈", layout="wide")
 st.title("📊 Index Insights")
 symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()
 
