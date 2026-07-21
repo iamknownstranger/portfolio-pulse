@@ -21,6 +21,7 @@ The app is organized by asset class:
 - **Equities — Non-Linear:** Option Chain analysis with Greeks, Max Pain, and OI/IV charts (NSE indices).
 - **Fixed Income:** US Treasury yield curve, curve slope/inversion, and macro gauges (DXY, VIX).
 - **Commodities:** Futures performance, rolling volatility, and cross-commodity correlations.
+- **Digital Assets:** Crypto risk/return metrics (365-day annualization), drawdown timelines, ETH/BTC relative strength, and correlation vs equities and gold.
 
 Highlights:
 

@@ -27,6 +27,9 @@ PAGE_SECTIONS = {
     "🛢️ Commodities": [
         ("views/commodities.py", "Commodities", "🛢️", "commodities"),
     ],
+    "🪙 Digital Assets": [
+        ("views/crypto.py", "Crypto Metrics", "🪙", "crypto"),
+    ],
 }
 
 DEFAULT_PAGE = "views/portfolio_pulse.py"
