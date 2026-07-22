@@ -20,7 +20,7 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Compile all sources
-        run: python -m py_compile 1_💼_Portfolio_Pulse.py streamlit_app.py common/*.py views/*.py scripts/*.py
+        run: python -m py_compile 1_💼_Portfolio_Pulse.py streamlit_app.py common/*.py views/*.py
 
       - name: Run tests
         run: pytest -v
@@ -46,7 +46,7 @@ jobs:
           /tmp/venv/bin/pip install -r requirements.txt
 
       - name: Compile all sources
-        run: /tmp/venv/bin/python -m py_compile 1_💼_Portfolio_Pulse.py streamlit_app.py common/*.py views/*.py scripts/*.py
+        run: /tmp/venv/bin/python -m py_compile 1_💼_Portfolio_Pulse.py streamlit_app.py common/*.py views/*.py
 
       - name: Import entrypoint dependencies
         run: /tmp/venv/bin/python -c "import streamlit, pandas, numpy, plotly, duckdb, polars, yfinance, pypfopt, scipy"

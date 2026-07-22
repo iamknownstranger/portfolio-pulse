@@ -1,5 +1,3 @@
-from datetime import timedelta
-
 import duckdb
 import numpy as np
 import pandas as pd
@@ -9,7 +7,7 @@ import polars as pl
 import streamlit as st
 import yfinance as yf
 
-from common.data import get_benchmark_data
+from common.data import get_benchmark_data, get_price_data
 from common.sidebar import render_sidebar
 
 
@@ -52,15 +50,6 @@ def detect_composition_changes(df):
     ])
     return df_top100
 
-def get_date_range(period, end_date):
-    if period == "WTD":
-        return end_date - timedelta(days=end_date.weekday()), end_date
-    elif period == "MTD":
-        return end_date.replace(day=1), end_date
-    elif period == "YTD":
-        return end_date.replace(month=1, day=1), end_date 
-    return INCEPTION_DATE, end_date
-
 def fetch_data(con, start_date, end_date, symbols_filter=None):
     # Symbols and dates come from user input — bind them, never interpolate.
     params = [str(start_date), str(end_date)]
@@ -94,26 +83,26 @@ df_composition_changes = detect_composition_changes(data)
 df_index_pd = df_index.to_pandas().sort_values("date")
 df_index_pd["daily_pct_change"] = df_index_pd["index_value"].pct_change()
 
-month_mask = (df_index_pd["date"] >= (pd.to_datetime(end_date) - timedelta(days=365*3))) & (df_index_pd["date"] <= pd.to_datetime(end_date))
-df_index_month = df_index_pd[month_mask]
-
-cumulative_return = (df_index_month["index_value"].iloc[-1] / df_index_month["index_value"].iloc[0] - 1) * 100 if not df_index_month.empty else 0.0
+# All metrics cover the window selected in the sidebar (the query already
+# filtered the data to it).
+cumulative_return = (df_index_pd["index_value"].iloc[-1] / df_index_pd["index_value"].iloc[0] - 1) * 100
 volatility = df_index_pd["daily_pct_change"].std() * (252 ** 0.5) * 100
-sharpe_ratio = cumulative_return / volatility if volatility else 0
-max_drawdown = (df_index_pd["index_value"].cummax() - df_index_pd["index_value"]).max()
+annualized_return = df_index_pd["daily_pct_change"].mean() * 252 * 100
+sharpe_ratio = annualized_return / volatility if volatility else 0
 
 days_held = (df_index_pd["date"].iloc[-1] - df_index_pd["date"].iloc[0]).days
 cagr = ((df_index_pd["index_value"].iloc[-1] / df_index_pd["index_value"].iloc[0]) ** (365/days_held) - 1) * 100 if days_held else 0
 
 df_index_pd["rolling_volatility_30d"] = df_index_pd["daily_pct_change"].rolling(window=30).std() * (252 ** 0.5) * 100
 df_index_pd["drawdown"] = (df_index_pd["index_value"] - df_index_pd["index_value"].cummax()) / df_index_pd["index_value"].cummax() * 100
+max_drawdown = df_index_pd["drawdown"].min()
 
 # --- New Metrics ---
 # Downside volatility for Sortino
 index_daily = df_index_pd["daily_pct_change"].dropna()
 downside_std = index_daily[index_daily < 0].std() * np.sqrt(252)
 sortino_ratio = (df_index_pd["daily_pct_change"].mean() * 252) / downside_std if downside_std != 0 else np.nan
-calmar_ratio = (cagr / abs(max_drawdown)) if max_drawdown != 0 else np.nan
+calmar_ratio = (cagr / abs(max_drawdown)) if max_drawdown else np.nan
 
 # Beta and correlation versus S&P500
 beta, corr_sp500 = np.nan, np.nan
@@ -138,24 +127,25 @@ else:
 # === Summary Metrics Display ===
 st.subheader("📊 Summary Metrics")
 cols = st.columns(6)
-cols[0].metric("Cum. Return (1M)", f"{cumulative_return:.2f}%")
+cols[0].metric("Cumulative Return", f"{cumulative_return:.2f}%")
 cols[1].metric("Annualized Vol", f"{volatility:.2f}%")
 cols[2].metric("Sharpe Ratio", f"{sharpe_ratio:.2f}")
-cols[3].metric("Max Drawdown", f"{max_drawdown:.2f}")
+cols[3].metric("Max Drawdown", f"{max_drawdown:.2f}%")
 cols[4].metric("CAGR", f"{cagr:.2f}%")
 cols[5].metric("Sortino Ratio", f"{sortino_ratio:.2f}")
 
-cols2 = st.columns(2)
+cols2 = st.columns(3)
 cols2[0].metric("Beta vs S&P500", f"{beta:.2f}")
 cols2[1].metric("Corr with S&P500", f"{corr_sp500:.2f}")
+cols2[2].metric("Calmar Ratio", f"{calmar_ratio:.2f}")
 
 # === Visualizations ===
 
 st.subheader("📈 Index Performance")
 fig = go.Figure()
 fig.add_trace(go.Scatter(
-    x=df_index_month["date"],
-    y=df_index_month["index_value"],
+    x=df_index_pd["date"],
+    y=df_index_pd["index_value"],
     mode="lines",
     name="Index Value",
     line=dict(color="cyan")
@@ -272,16 +262,14 @@ else:
 # === Portfolio vs Index Performance & Analytics ===
 st.subheader("📈 Portfolio vs Index Performance")
 
-# --- Fetch portfolio price data ---
-@st.cache_data(ttl=86400)
+# --- Fetch portfolio price data (shared fetcher, datetime index) ---
 def get_portfolio_data(tickers, start, end):
-    try:
-        df_yf = yf.download(tickers, start=start, end=end, auto_adjust=False, multi_level_index=False)["Close"]
-        df_yf.index = pd.to_datetime(df_yf.index)
-        return df_yf.dropna(axis=1, how='all')
-    except Exception as e:
-        st.error(f"Error fetching portfolio data: {e}")
-        return pd.DataFrame()
+    prices = get_price_data(tickers, start, end)
+    if prices.empty:
+        return prices
+    prices = prices.copy()
+    prices.index = pd.to_datetime(prices.index)
+    return prices
 
 portfolio_df = get_portfolio_data(symbols, start_date, end_date)
 
@@ -292,6 +280,9 @@ if not portfolio_df.empty:
     # --- Index daily/cumulative returns ---
     index_daily = df_index_pd.set_index("date")["daily_pct_change"].dropna()
     index_cum = (1 + index_daily).cumprod()
+    # Align index types: the index series is keyed by date objects while the
+    # portfolio uses Timestamps — without this the inner join is empty.
+    index_cum.index = pd.to_datetime(index_cum.index)
     # --- Align for plotting ---
     perf_df = pd.concat([
         portfolio_cum.rename("Portfolio"),
@@ -420,14 +411,7 @@ if not portfolio_df.empty and not benchmark_series.empty:
     cols[5].metric(f"{benchmark_name} Sortino", f"{benchmark_sortino:.2f}")
     cols[6].metric("Portfolio Beta vs Benchmark", f"{beta_pf:.2f}")
     st.metric("Portfolio Correlation with Benchmark", f"{corr_pf:.2f}")
-    # --- Risk/Return analytics ---
-    st.subheader("Portfolio Correlation Matrix")
-    corr_matrix = portfolio_df.corr(method='pearson')
-    st.dataframe(corr_matrix)
-    corr_heatmap = px.imshow(corr_matrix, title='Correlation between Portfolio Stocks')
-    st.plotly_chart(corr_heatmap, use_container_width=True)
-    st.subheader("Portfolio Daily Returns Distribution")
-    returns_hist = px.histogram(portfolio_daily, nbins=50, title="Portfolio Daily Returns Distribution")
-    st.plotly_chart(returns_hist, use_container_width=True)
+    # (Correlation matrix and returns distribution are shown once in the
+    # Portfolio vs Index section above.)
 else:
     st.warning("No valid portfolio or benchmark data available for comparison. Please check your stock selection and benchmark.")

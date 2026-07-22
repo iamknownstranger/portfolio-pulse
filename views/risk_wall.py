@@ -1,9 +1,8 @@
 import streamlit as st
-import pandas as pd
 import plotly.express as px
 import numpy as np
 from scipy.stats import norm
-from common.data import get_price_data, load_companies_csv
+from common.data import get_price_data
 from common.sidebar import render_sidebar
 
 st.title("⚠️ Risk Wall")
@@ -15,13 +14,6 @@ df = get_price_data(symbols, start_date, end_date)
 if df.empty:
     st.warning("No price data available for the selected stocks and date range. Please adjust your selection and try again.")
     st.stop()
-
-# Load actual data
-df_companies = load_companies_csv()
-
-# FILTER: keep only selected symbols if provided and if the CSV has a "Symbol" column.
-if "Symbol" in df_companies.columns and symbols:
-    df_companies = df_companies[df_companies["Symbol"].isin(symbols)]
 
 # --- Risk Metrics ---
 # Compute daily returns and portfolio returns
@@ -80,18 +72,20 @@ correlation_heatmap = px.imshow(correlation_matrix, title='Correlation between S
 st.plotly_chart(correlation_heatmap, use_container_width=True)
 
 
-# --- Stress Testing (using a -10% shock on portfolio returns) ---
-stress_returns = portfolio_returns - 0.10
-stress_cum_returns = (1 + stress_returns).cumprod()
-stress_drawdown = (stress_cum_returns - stress_cum_returns.cummax()) / stress_cum_returns.cummax() * 100
-max_stress_drawdown = stress_drawdown.min()
+# --- Stress Testing: hypothetical one-day market shock ---
 st.subheader("Stress Testing")
-st.write("Stress Test: Scenario applying a -10% shock to portfolio daily returns")
-fig_stress = px.line(x=stress_cum_returns.index, y=stress_drawdown, 
-                     title="Stress Test Drawdown",
-                     labels={"x": "Date", "y": "Drawdown (%)"})
-st.plotly_chart(fig_stress, use_container_width=True)
-st.metric("Max Stress Drawdown", f"{max_stress_drawdown:.2f}%")
+st.write("Scenario: a one-day market shock hits the portfolio today. "
+         "The table shows the portfolio value (growth of 1) and the resulting "
+         "drawdown from its historical peak under each shock size.")
+current_value = cum_returns.iloc[-1]
+peak_value = running_max.iloc[-1]
+shock_cols = st.columns(3)
+for col, shock in zip(shock_cols, [-0.05, -0.10, -0.20]):
+    shocked_value = current_value * (1 + shock)
+    shocked_drawdown = (shocked_value - peak_value) / peak_value * 100
+    col.metric(f"{shock:.0%} Shock",
+               f"{shocked_value:.3f}",
+               f"{shocked_drawdown:.2f}% from peak")
 
 # --- Portfolio Volatility Plot ---
 rolling_vol = portfolio_returns.rolling(window=30).std() * np.sqrt(252) * 100

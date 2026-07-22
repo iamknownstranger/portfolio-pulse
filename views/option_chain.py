@@ -55,16 +55,6 @@ HEADERS = {
 
 # --- DATA FETCHING & PROCESSING ---
 
-@st.cache_data(ttl=60)
-def get_current_price(yf_symbol):
-    """Fetches the current price of an index using yfinance."""
-    try:
-        stock = yf.Ticker(yf_symbol)
-        data = stock.history(period="1d", interval="1m")
-        return data['Close'].iloc[-1] if not data.empty else None
-    except Exception:
-        return None
-
 def _nse_session():
     """Requests session with the cookies NSE requires for its JSON API."""
     session = requests.Session()
