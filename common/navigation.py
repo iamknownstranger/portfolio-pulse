@@ -30,6 +30,9 @@ PAGE_SECTIONS = {
     "🪙 Digital Assets": [
         ("views/crypto.py", "Crypto Metrics", "🪙", "crypto"),
     ],
+    "🧭 Thematic & Flows": [
+        ("views/smart_money.py", "Smart Money Radar", "🧭", "smart-money"),
+    ],
 }
 
 DEFAULT_PAGE = "views/portfolio_pulse.py"

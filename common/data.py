@@ -38,18 +38,15 @@ def _fetch_from_duckdb(tickers, start, end, db_path=MARKET_DATA_DB):
     return df.pivot(index="date", columns="symbol", values="close_price")
 
 
-def _fetch_from_yfinance(tickers, start, end, max_retries=3, retry_delay=5):
-    """Fetch close prices from Yahoo Finance with rate-limit retries."""
+def _yf_download_with_retry(tickers, start, end, max_retries=3, retry_delay=5, **kwargs):
+    """Call yf.download, retrying only on rate limits.
+
+    Returns None when the download could not be completed, so callers can
+    tell "no data" apart from an empty-but-valid frame.
+    """
     for attempt in range(max_retries):
         try:
-            df_yf = yf.download(
-                tickers, start=start, end=end,
-                auto_adjust=False, multi_level_index=False,
-            )["Close"]
-            if isinstance(df_yf, pd.Series):
-                df_yf = df_yf.to_frame(name=tickers[0] if isinstance(tickers, (list, tuple)) else tickers)
-            df_yf.index = pd.to_datetime(df_yf.index).date
-            return df_yf.dropna(axis=1, how="all")
+            return yf.download(tickers, start=start, end=end, auto_adjust=False, **kwargs)
         except Exception as e:
             if "rate limit" in str(e).lower() or "too many requests" in str(e).lower():
                 if attempt < max_retries - 1:
@@ -57,11 +54,80 @@ def _fetch_from_yfinance(tickers, start, end, max_retries=3, retry_delay=5):
                     time.sleep(retry_delay)
                 else:
                     st.error("Too many requests to Yahoo Finance. Please try again later.")
-                    return pd.DataFrame()
+                    return None
             else:
                 st.error(f"Error fetching data from yfinance: {e}")
-                return pd.DataFrame()
-    return pd.DataFrame()
+                return None
+    return None
+
+
+def _fetch_from_yfinance(tickers, start, end, max_retries=3, retry_delay=5):
+    """Fetch close prices from Yahoo Finance with rate-limit retries."""
+    raw = _yf_download_with_retry(
+        tickers, start, end, max_retries, retry_delay, multi_level_index=False,
+    )
+    if raw is None or "Close" not in raw:
+        return pd.DataFrame()
+    df_yf = raw["Close"]
+    if isinstance(df_yf, pd.Series):
+        df_yf = df_yf.to_frame(name=tickers[0] if isinstance(tickers, (list, tuple)) else tickers)
+    df_yf.index = pd.to_datetime(df_yf.index).date
+    return df_yf.dropna(axis=1, how="all")
+
+
+OHLCV_FIELDS = ("Close", "High", "Low", "Volume")
+
+
+def _fetch_ohlcv_from_yfinance(tickers, start, end, max_retries=3, retry_delay=5):
+    """Fetch Close/High/Low/Volume frames keyed by field name.
+
+    yfinance returns a (field, ticker) MultiIndex — two levels even for a
+    single ticker — so each field slices out as a ticker-columned frame.
+    """
+    raw = _yf_download_with_retry(tickers, start, end, max_retries, retry_delay)
+    if raw is None or raw.empty:
+        return {}
+
+    frames = {}
+    for field in OHLCV_FIELDS:
+        if raw.columns.nlevels > 1:
+            if field not in raw.columns.get_level_values(0):
+                continue
+            frame = raw[field]
+        elif field in raw.columns:
+            frame = raw[[field]]
+            frame.columns = [tickers[0] if isinstance(tickers, (list, tuple)) else tickers]
+        else:
+            continue
+        if isinstance(frame, pd.Series):
+            frame = frame.to_frame()
+        frame = frame.copy()
+        frame.index = pd.to_datetime(frame.index)
+        frames[field] = frame.dropna(axis=1, how="all")
+
+    if "Close" not in frames or frames["Close"].empty:
+        return {}
+    # Keep every field on the same surviving symbols so downstream signals
+    # never mix a price column with a missing volume column.
+    symbols = list(frames["Close"].columns)
+    return {
+        field: frame.reindex(columns=symbols)
+        for field, frame in frames.items()
+    }
+
+
+@st.cache_data(ttl=86400)
+def get_ohlcv_data(tickers, start, end):
+    """Close/High/Low/Volume frames for tickers, indexed by timestamp.
+
+    Used by the Smart Money Radar, which needs volume and intraday range for
+    money-flow signals rather than the close-only series get_price_data
+    returns. Yahoo Finance only — the local DuckDB store holds closes alone.
+    """
+    tickers = list(tickers)
+    if not tickers:
+        return {}
+    return _fetch_ohlcv_from_yfinance(tickers, start, end)
 
 
 @st.cache_data(ttl=86400)
