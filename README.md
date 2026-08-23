@@ -21,6 +21,7 @@ The app is organized by asset class:
 - **Fixed Income:** US Treasury yield curve, curve slope/inversion, and macro gauges (DXY, VIX).
 - **Commodities:** Futures performance, rolling volatility, and cross-commodity correlations.
 - **Digital Assets:** Crypto risk/return metrics (365-day annualization), drawdown timelines, ETH/BTC relative strength, and correlation vs equities and gold.
+- **Thematic & Flows:** Smart Money Radar — ranks ~16 thematic baskets (AI, crypto, nuclear, quantum, rare earths, GLP-1 …) by accumulation evidence rather than trailing return, with lifecycle staging, a rotation heatmap, 30-day change alerts, and SEC EDGAR insider (Form 4) and institutional (13F) filings.
 
 Highlights:
 
@@ -32,6 +33,24 @@ Highlights:
 - **Portfolio Optimization:** Optimize your portfolio using the efficient frontier for the maximum Sharpe ratio.
 - **Visualizations:** Generate interactive charts and plots for enhanced data presentation.
 - **Performance Metrics:** Track KPIs like expected annual return, annual volatility, and Sharpe ratio.
+
+### Smart Money Radar
+
+The radar combines two evidence layers, both free and key-less:
+
+1. **Price/volume accumulation signals** (Yahoo Finance) — Chaikin Money Flow, dollar-volume
+   thrust, relative-strength acceleration and breadth, composited so that money arriving now
+   outweighs returns already booked. These are a *proxy* for institutional flow, not flow data.
+2. **SEC EDGAR filings** — Form 4 open-market insider purchases (transaction code `P` only) and
+   13F institutional position changes. 13F holdings are filed up to 45 days after quarter end,
+   so they confirm a theme rather than front-run it.
+
+SEC's fair-access policy asks for a contact address in the request User-Agent. Set
+`SEC_CONTACT_EMAIL` to a mailbox you read; otherwise a placeholder is used.
+
+```sh
+export SEC_CONTACT_EMAIL="you@example.com"
+```
 
 ## Installation
 
