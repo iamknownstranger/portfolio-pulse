@@ -1,113 +1,82 @@
-import streamlit as st
-import pandas as pd
+import math
+
 import numpy as np
-from common.data import get_price_data, load_companies_csv
-from common.sidebar import render_sidebar
-from pypfopt import expected_returns, risk_models, EfficientFrontier, CLA
+import pandas as pd
 import plotly.graph_objects as go
+import streamlit as st
 
-st.title("🔄 Rebalancing & Optimization")
+from common.optimization import optimize_allocation
+from common.portfolio import rebalance_plan
+from common.portfolio_ui import format_value, load_portfolio, model_methodology
+from common.sidebar import portfolio_settings, portfolio_filters
 
-symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()
+st.title("Rebalancing & Optimization")
+st.caption("Turn your model allocation into a constrained target and an exportable dollar plan.")
+symbols, start, end, *_ = portfolio_filters()
+portfolio = load_portfolio(symbols, start, end)
+rf = portfolio_settings()["risk_free_rate"]
 
-# Load actual data
-df_companies = load_companies_csv()
+cols = st.columns([2, 1, 1])
+method = cols[0].selectbox("Target objective", ["Maximum Sharpe", "Minimum volatility", "Equal weight"])
+minimum_cap = math.ceil(100 / len(symbols))
+cap = cols[1].number_input("Max allocation per asset (%)", min_value=minimum_cap, max_value=100,
+                           value=max(40, minimum_cap), step=5,
+                           help="Long-only, fully invested. Every target weight respects this cap.")
+value = cols[2].number_input("Illustrative portfolio value ($)", min_value=1.0, value=10000.0, step=1000.0)
 
-# FILTER by sidebar selection if available
-if "Symbol" in df_companies.columns and symbols:
-    df_companies = df_companies[df_companies["Symbol"].isin(symbols)]
 
-total = df_companies["marketcap"].sum()
+@st.cache_data(show_spinner=False)
+def estimate(prices, method, cap, rf):
+    return optimize_allocation(prices, method, cap, rf)
 
-# Use market cap proportion as current allocation percentage
-df_companies["Current %"] = df_companies["marketcap"] / total * 100
-# Assume target allocation is the median of current percentages
-target = df_companies["Current %"].median()
-df_companies["Target %"] = target
 
-# --- New: Rebalancing Metrics ---
-df_companies["Allocation Diff"] = abs(df_companies["Current %"] - df_companies["Target %"])
-avg_diff = df_companies["Allocation Diff"].mean()
-st.subheader("Rebalancing Metrics")
-st.metric("Avg Allocation Deviation", f"{avg_diff:.2f}%")
+try:
+    with st.spinner("Estimating a feasible allocation…"):
+        result = estimate(portfolio.prices, method, cap / 100, rf)
+except ValueError as exc:
+    st.info(str(exc))
+    st.stop()
+if result.notice:
+    st.info(result.notice)
+if len(portfolio.prices) < 60:
+    st.warning("This estimate uses fewer than 60 common price observations. Short samples can produce unstable targets.")
+st.subheader(f"Target allocation · {result.method}")
+plan = rebalance_plan(portfolio.weights.to_dict(), result.weights.to_dict(), value)
+turnover = plan["Change"].abs().sum() / 2
+cols = st.columns(3)
+cols[0].metric("One-way turnover", f"{turnover:.2%}", help="Half the sum of absolute weight changes.")
+cols[1].metric("Buy value", format_value(plan["Trade value ($)"].clip(lower=0).sum(), dollars=True))
+cols[2].metric("Sell value", format_value(-plan["Trade value ($)"].clip(upper=0).sum(), dollars=True))
 
-# Show top 10 companies for rebalancing analysis
-df_alloc_top10 = df_companies.sort_values("marketcap", ascending=False).head(10)[["Name", "Current %", "Target %"]]
-st.subheader("Current vs Target Allocation")
-st.dataframe(df_alloc_top10, hide_index=True)
-
-st.subheader("Rebalancing Suggestions")
-st.write("Companies with Current % above target may be overrepresented. Consider selling some shares, while companies below target may be underweighted.")
-
-# Updated to calculate real values for Pre-Optimization and Post-Optimization Sharpe Ratios
-def calculate_sharpe_ratio(df):
-    daily_returns = df.pct_change().dropna()
-    portfolio_daily = daily_returns.mean(axis=1)
-    annual_return = portfolio_daily.mean() * 252
-    annual_volatility = portfolio_daily.std() * np.sqrt(252)
-    sharpe_ratio = annual_return / annual_volatility if annual_volatility != 0 else np.nan
-    return sharpe_ratio
-
-# Fetch data for the selected symbols
-data = get_price_data(symbols, start_date, end_date)
-if not data.empty:
-    pre_optimization_sharpe = calculate_sharpe_ratio(data)
-
-    # Perform portfolio optimization using PyPortfolioOpt
-    mean_returns = expected_returns.mean_historical_return(data)
-    covariance_matrix = risk_models.sample_cov(data)
-    ef = EfficientFrontier(mean_returns, covariance_matrix)
-    try:
-        ef.max_sharpe()
-    except Exception as e:
-        st.warning(f"Max-Sharpe optimization failed ({e}). Falling back to minimum volatility.")
-        ef.min_volatility()
-    cleaned_weights = ef.clean_weights()
-
-    # Calculate Post-Optimization Sharpe Ratio
-    post_optimization_sharpe = ef.portfolio_performance()[2]
-
-    # Update the metrics display
-    st.subheader("Impact on Key Metrics")
-    col1, col2 = st.columns(2)
-    col1.metric("Pre-Optimization Sharpe", f"{pre_optimization_sharpe:.2f}")
-    col2.metric("Post-Optimization Sharpe", f"{post_optimization_sharpe:.2f}")
-
-    # Updated to display Optimized Portfolio Weights using st.metric
-    # Display optimized weights
-    st.subheader("Optimized Portfolio Weights")
-    for symbol, weight in cleaned_weights.items():
-        st.metric(label=symbol, value=f"{weight:.2%}")
-
-    # Generate Efficient Frontier using PyPortfolioOpt
-    try:
-        cla = CLA(mean_returns, covariance_matrix)
-        cla.max_sharpe()
-        efficient_frontier = cla.efficient_frontier()
-
-        # Extract risks and returns correctly
-        risks = [point[0] for point in efficient_frontier]
-        returns = [point[1] for point in efficient_frontier]
-
-        # Plot the Efficient Frontier using Plotly
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=risks, y=returns, mode='lines', name='Efficient Frontier'))
-        fig.update_layout(
-            title="Efficient Frontier",
-            xaxis_title="Volatility (Risk)",
-            yaxis_title="Expected Return",
-            template="plotly_white"
-        )
-
-        # Display the plot in Streamlit
-        st.subheader("Efficient Frontier")
-        st.plotly_chart(fig, use_container_width=True)
-    except Exception as e:
-        st.warning(f"Could not compute the efficient frontier for this selection: {e}")
-
-else:
-    st.warning("No price data available for the selected stocks and date range, so optimization is unavailable.")
-
-st.subheader("Optimization Tools")
-st.write("User-defined constraints and advanced optimization options will be provided here.")
-
+trades, estimates = st.tabs(["Allocation & trade plan", "Risk / return estimates"])
+with trades:
+    fig = go.Figure()
+    fig.add_bar(x=plan.index, y=plan["Current weight"] * 100, name="Current model")
+    fig.add_bar(x=plan.index, y=plan["Target weight"] * 100, name="Target", marker_color="#35D6B4")
+    fig.update_layout(barmode="group", yaxis_title="Allocation (%)", legend_orientation="h")
+    st.plotly_chart(fig, width="stretch")
+    st.dataframe(plan.style.format({"Current weight": "{:.2%}", "Target weight": "{:.2%}",
+                                    "Change": "{:+.2%}", "Trade value ($)": "${:+,.2f}"}), width="stretch")
+    st.download_button("Download rebalance plan", plan.to_csv().encode(), "rebalance_plan.csv", "text/csv", type="primary", on_click="ignore")
+    st.caption("Trade values are illustrative changes from your fixed model weights, not from live brokerage "
+               "positions or a historical buy-and-hold allocation. Fractional dollar trades exclude costs, taxes "
+               "and cash flows. The plan does not place orders.")
+with estimates:
+    current_metrics = result.performance(portfolio.weights, rf)
+    target_metrics = result.performance(result.weights, rf)
+    table = pd.DataFrame({"Current model": current_metrics, "Target": target_metrics},
+                          index=["Expected annual return", "Annual volatility", "Sharpe ratio"])
+    st.dataframe(table.style.format(subset=pd.IndexSlice[table.index[:2], :], formatter="{:.2%}")
+                 .format(subset=pd.IndexSlice[["Sharpe ratio"], :], formatter="{:.2f}"), width="stretch")
+    fig = go.Figure()
+    if not result.frontier.empty:
+        fig.add_scatter(x=result.frontier["Volatility"], y=result.frontier["Return"], mode="lines", name="Efficient frontier")
+    for name, (mean, vol, _), color in [("Current model", current_metrics, "#8FA8DD"), ("Target", target_metrics, "#35D6B4")]:
+        fig.add_scatter(x=[vol], y=[mean], mode="markers", name=name, marker={"size": 13, "color": color})
+    fig.update_layout(xaxis_title="Annual volatility", yaxis_title="Expected annual return",
+                      xaxis_tickformat=".0%", yaxis_tickformat=".0%", legend_orientation="h")
+    st.plotly_chart(fig, width="stretch")
+    st.caption("Both allocations use the same arithmetic historical return and sample covariance estimates, "
+               "the same risk-free rate, and the same observations. The frontier shows feasible portfolios "
+               "under your cap. These are in-sample estimates, not out-of-sample performance or forecasts.")
+model_methodology()

@@ -59,15 +59,22 @@ class TestCalculateMaxPain:
         }, index=[90, 100, 110])
         assert calculate_max_pain(df) == 100
 
-    def test_max_pain_pulled_to_heavy_put_strike(self):
-        # Huge put OI at the lowest strike pulls max pain down to it:
-        # settling at 90 keeps those puts worthless, settling higher
-        # pays them out heavily.
+    def test_heavy_low_strike_puts_are_worthless_above_their_strike(self):
+        # Puts pay max(K-S, 0). These puts are worthless at every candidate
+        # settlement and must not pull the result down to 90.
         df = pd.DataFrame({
             "CE_OI": [10, 10, 10],
             "PE_OI": [10000, 10, 10],
         }, index=[90, 100, 110])
-        assert calculate_max_pain(df) == 90
+        assert calculate_max_pain(df) == 100
+
+    @pytest.mark.parametrize("calls,puts,expected", [
+        ([10000, 10, 10], [10, 10, 10], 90),
+        ([10, 10, 10], [10, 10, 10000], 110),
+    ])
+    def test_asymmetric_payoffs_use_the_correct_call_and_put_direction(self, calls, puts, expected):
+        df = pd.DataFrame({"CE_OI": calls, "PE_OI": puts}, index=[90, 100, 110])
+        assert calculate_max_pain(df) == expected
 
     def test_missing_columns_returns_zero(self):
         assert calculate_max_pain(pd.DataFrame({"other": [1]})) == 0

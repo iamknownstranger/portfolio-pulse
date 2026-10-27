@@ -1,59 +1,69 @@
-import streamlit as st
 import pandas as pd
 import plotly.express as px
+import streamlit as st
+
 from common.data import load_companies_csv
-from common.sidebar import render_sidebar
+from common.portfolio import normalized_weights
+from common.portfolio_ui import load_portfolio, model_methodology, model_weights
+from common.sidebar import portfolio_filters
 
-
-st.title("📋 Holdings & Exposure")
-
-symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()
-
-
-# Load actual holdings data from CSV
-df_holdings = load_companies_csv()
-
-# FILTER by symbols if available
-if "Symbol" in df_holdings.columns and symbols:
-    df_holdings = df_holdings[df_holdings["Symbol"].isin(symbols)]
-
-if df_holdings.empty:
-    st.warning("No holdings match the selected symbols.")
-    st.stop()
-
-# --- New: Key Holdings Metrics ---
-total_market_cap = df_holdings["marketcap"].sum()
-avg_market_cap = df_holdings["marketcap"].mean()
-st.subheader("Key Holdings Metrics")
-col1, col2 = st.columns(2)
-col1.metric("Total Market Cap", f"${total_market_cap:,.0f}")
-col2.metric("Avg Market Cap", f"${avg_market_cap:,.0f}")
-
-# Display Holdings Table (show top 10 for brevity)
-st.subheader("Your Holdings")
-st.dataframe(df_holdings.head(10), hide_index=True)
-
-# Geographical Exposure based on the 'country' column
-st.subheader("Geographical Exposure")
-geo = df_holdings["country"].value_counts().reset_index()
-geo.columns = ["Country", "Count"]
-fig_geo = px.pie(geo, names="Country", values="Count", title="Geographical Exposure")
-st.plotly_chart(fig_geo, use_container_width=True)
-
-# Market Cap Distribution by Category
-st.subheader("Market Cap Distribution")
-# Define categories from quantiles of marketcap
-quantiles = df_holdings["marketcap"].quantile([0.33, 0.66]).values
-def cap_category(x):
-    if x < quantiles[0]:
-        return "Small Cap"
-    elif x < quantiles[1]:
-        return "Mid Cap"
+st.title("Holdings & Exposure")
+st.caption("Set explicit model allocations and see how concentrated they are.")
+symbols, start, end, *_ = portfolio_filters()
+weights = model_weights(symbols)
+st.subheader("Your model allocation")
+st.write("Start with equal weights or enter your own percentages. These weights apply to historical analytics "
+         "across the portfolio pages. They represent a model allocation, not imported brokerage holdings.")
+with st.form("allocation_form"):
+    editor = st.data_editor(pd.DataFrame({"Asset": symbols, "Weight (%)": weights.reindex(symbols).values * 100}),
+                            disabled=["Asset"], hide_index=True, width="stretch",
+                            key=f"allocation_editor_{'_'.join(symbols)}_{st.session_state.get('allocation_revision', 0)}",
+                            column_config={"Weight (%)": st.column_config.NumberColumn(min_value=0.0, max_value=100.0,
+                                                                                       step=0.1, format="%.2f")})
+    cols = st.columns(2)
+    save = cols[0].form_submit_button("Apply allocations", type="primary", width="stretch")
+    reset = cols[1].form_submit_button("Reset to equal weights", width="stretch")
+if reset:
+    st.session_state.pop("portfolio_weights", None)
+    # A new widget identity discards unsaved edits when resetting.
+    st.session_state["allocation_revision"] = st.session_state.get("allocation_revision", 0) + 1
+    st.rerun()
+if save:
+    try:
+        weights = normalized_weights(symbols, pd.Series(editor["Weight (%)"].to_numpy() / 100, index=editor["Asset"]))
+    except ValueError as exc:
+        st.error(str(exc))
     else:
-        return "Large Cap"
-df_holdings["Category"] = df_holdings["marketcap"].apply(cap_category)
-cap_dist = df_holdings["Category"].value_counts().reset_index()
-cap_dist.columns = ["Category", "Count"]
-fig_caps = px.bar(cap_dist, x="Category", y="Count", title="Market Cap Distribution")
-st.plotly_chart(fig_caps, use_container_width=True)
+        st.session_state["portfolio_weights"] = weights.to_dict()
+        st.success("Model allocations updated across your portfolio dashboards.")
+weights = model_weights(symbols)
+cols = st.columns(3)
+cols[0].metric("Assets selected", len(symbols))
+cols[1].metric("Largest allocation", f"{weights.max():.2%}")
+cols[2].metric("Effective positions", f"{1 / weights.pow(2).sum():.1f}", help="1 / sum of squared weights; lower values mean greater concentration.")
 
+allocation, performance = st.tabs(["Allocation & geography", "Asset history"])
+with allocation:
+    names = pd.DataFrame({"Asset": symbols, "Weight": weights.reindex(symbols).values})
+    try:
+        reference = load_companies_csv().copy()
+        reference["Asset"] = reference["Symbol"].str.replace(r"\.([AB])$", r"-\1", regex=True)
+        reference = reference.drop_duplicates("Asset").rename(columns={"country": "Country"})
+        names = names.merge(reference[["Asset", "Name", "Country"]], how="left", on="Asset")
+    except (OSError, ValueError, KeyError):
+        names["Name"], names["Country"] = None, None
+    names["Country"] = names["Country"].fillna("Unknown / outside reference")
+    names["Name"] = names["Name"].fillna(names["Asset"])
+    cols = st.columns(2)
+    cols[0].plotly_chart(px.pie(names, names="Asset", values="Weight", hole=0.6, title="Model allocation"), width="stretch")
+    geo = names.groupby("Country", as_index=False)["Weight"].sum()
+    cols[1].plotly_chart(px.bar(geo, x="Weight", y="Country", orientation="h", title="Domicile exposure by weight"), width="stretch")
+    st.caption("Country and company names come from a bundled historical reference. Country indicates domicile, "
+               "not revenue exposure; unrecognized symbols remain visible as unknown.")
+    st.dataframe(names[["Asset", "Name", "Country", "Weight"]].style.format({"Weight": "{:.2%}"}), hide_index=True, width="stretch")
+    st.download_button("Download model allocation", names.to_csv(index=False).encode(), "model_allocation.csv", "text/csv", on_click="ignore")
+with performance:
+    portfolio = load_portfolio(symbols, start, end)
+    normalized = portfolio.prices / portfolio.prices.iloc[0] * 100
+    st.plotly_chart(px.line(normalized, title="Asset growth from 100", labels={"value": "Growth of 100", "index": "Date"}), width="stretch")
+model_methodology()

@@ -1,106 +1,75 @@
 # Portfolio Pulse
 
-<!-- Table of Contents -->
-- [Introduction](#introduction)
-- [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Development](#development)
-- [Contributions](#contributions)
-- [License](#license)
+A Streamlit investment research workspace for understanding portfolio performance, managing model allocations, and exploring markets across asset classes.
 
-<!-- Introduction -->
-**Portfolio Pulse** is an intuitive and comprehensive portfolio analysis tool designed for investors to analyze and optimize their stock portfolios. Leveraging modern portfolio theory, it offers insights into historical performance, risk metrics, correlations, and optimized asset allocation. It also features an interactive Equal-Weighted Index Dashboard for detailed market insights.
+## Start locally
 
-## Features
+Use Python 3.11 or later:
 
-The app is organized by asset class:
+```sh
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+streamlit run streamlit_app.py
+```
 
-- **Equities — Linear:** Portfolio Pulse, Index Insights, Risk Wall, Performance Analytics, Rebalancing & Optimization, Holdings & Exposure.
-- **Equities — Non-Linear:** Option Chain analysis with Greeks, Max Pain, and OI/IV charts (NSE indices).
-- **Fixed Income:** US Treasury yield curve, curve slope/inversion, and macro gauges (DXY, VIX).
-- **Commodities:** Futures performance, rolling volatility, and cross-commodity correlations.
-- **Digital Assets:** Crypto risk/return metrics (365-day annualization), drawdown timelines, ETH/BTC relative strength, and correlation vs equities and gold.
-- **Thematic & Flows:** Smart Money Radar — ranks ~16 thematic baskets (AI, crypto, nuclear, quantum, rare earths, GLP-1 …) by accumulation evidence rather than trailing return, with lifecycle staging, a rotation heatmap, 30-day change alerts, and SEC EDGAR insider (Form 4) and institutional (13F) filings.
+`1_💼_Portfolio_Pulse.py` is an equivalent entrypoint for existing Streamlit Community Cloud deployments. The `.devcontainer/` setup is also available for VS Code and Codespaces.
 
-Highlights:
+## Portfolio workflow
 
-- **Stock Selection:** Easily add stocks from the S&P 500 to your portfolio for analysis.
-- **Historical Data Analysis:** Visualize historical closing prices, daily returns, and cumulative returns.
-- **Equal-Weighted Index Dashboard:** View interactive performance plots, summary metrics, rolling volatility and drawdown charts, and composition changes.
-- **Correlation Matrix:** Examine the correlation between the stocks in your portfolio for effective diversification.
-- **Risk and Return Metrics:** Analyze daily returns, annualized volatility, and return per unit of risk.
-- **Portfolio Optimization:** Optimize your portfolio using the efficient frontier for the maximum Sharpe ratio.
-- **Visualizations:** Generate interactive charts and plots for enhanced data presentation.
-- **Performance Metrics:** Track KPIs like expected annual return, annual volatility, and Sharpe ratio.
+1. Start with the deterministic AAPL, MSFT, GOOGL, AMZN and NVDA model, or paste up to 30 tickers into the sidebar.
+2. Select dates, a benchmark and an annual risk-free rate. Click **Update analysis** to apply the filters. They persist when switching portfolio pages.
+3. Use **Holdings & Exposure** to enter model weights totalling 100%, or reset to equal weights. The same model drives portfolio performance, risk and rebalancing.
+4. Review growth, drawdowns, return attribution, monthly performance and correlations.
+5. In **Rebalancing & Optimization**, choose maximum Sharpe, minimum volatility or equal weight, set a per-asset cap, and export an illustrative dollar rebalance plan.
+6. Download adjusted prices, returns, model growth, allocation or attribution CSVs. Use **Refresh market data** to reload cached prices.
+
+The portfolio is a hypothetical fully invested model rebalanced to fixed weights at every observed common close. It excludes costs, taxes and cash flows. Custom weights are not imported brokerage positions, and no trades are executed. Settings persist within the current session.
+
+## Dashboards
+
+| Group | Tools |
+| --- | --- |
+| Equities — Linear | Portfolio Pulse, Index Insights, Risk Wall, Performance Analytics, Rebalancing & Optimization, Holdings & Exposure |
+| Equities — Non-Linear | NSE index option chains, Yahoo fallback, Greeks, Max Pain, open-interest and implied-volatility charts |
+| Fixed Income | Treasury yield curve, slope/inversion, DXY and VIX gauges |
+| Commodities | Futures performance, rolling volatility and return correlations |
+| Digital Assets | Crypto risk/return metrics with 365-day annualization, drawdowns, ETH/BTC strength and traditional-asset correlations |
+| Thematic & Flows | Smart Money Radar: thematic accumulation scores, lifecycle stages, rotation, stage changes and SEC filing confirmation |
+
+The overview leads with total return, annual volatility, maximum drawdown and Sharpe. Tabs provide asset details, return correlations and exports. Portfolio analytics use a shared, UI-independent calculation engine; benchmark prices align before returns are calculated.
+
+Sidebar categories with a single dashboard are direct links under the category name. Equities — Linear retains its six-page group.
+
+## Market data and assumptions
+
+Portfolio analytics use Yahoo split/dividend-adjusted closes. Index symbols such as the S&P 500 (`^GSPC`) are price indices and exclude reinvested dividends; SPY and QQQ ETF benchmark choices are available for adjusted-price comparisons. Dates are inclusive. Prices are cached for up to one hour.
+
+The raw-close DuckDB store is used by other data consumers only when all requested symbols and date bounds are covered. It has no market-data table in the supplied checkout. The market-cap membership archive ends on **19 March 2025**. Index Insights labels archive dates, holds selected membership fixed, and calculates returns from asset prices rather than changes in market caps. The Top 100 US benchmark uses a historical CSV universe, not a live point-in-time ranking.
+
+Risk metrics use 252 observations per year for equities. Drawdowns include the initial investment; VaR, expected shortfall and EWMA VaR share a one-observation horizon. Model weights remain fixed when price dates are missing; common complete dates are used without forward-filling, with excluded rows disclosed. Consecutive observations can then span multiple trading days. Optimization estimates are in-sample, not forecasts.
 
 ### Smart Money Radar
 
-The radar combines two evidence layers, both free and key-less:
+The radar combines two evidence layers:
 
-1. **Price/volume accumulation signals** (Yahoo Finance) — Chaikin Money Flow, dollar-volume
-   thrust, relative-strength acceleration and breadth, composited so that money arriving now
-   outweighs returns already booked. These are a *proxy* for institutional flow, not flow data.
-2. **SEC EDGAR filings** — Form 4 open-market insider purchases (transaction code `P` only) and
-   13F institutional position changes. 13F holdings are filed up to 45 days after quarter end,
-   so they confirm a theme rather than front-run it.
+- **Price/volume accumulation proxies:** Chaikin Money Flow, dollar-volume thrust, relative-strength acceleration and breadth. These are not measured institutional fund flows.
+- **SEC EDGAR filings:** Form 4 open-market purchases (`P` only) and 13F institutional position changes. 13F filings can lag quarter end by 45 days.
 
-SEC's fair-access policy asks for a contact address in the request User-Agent. Set
-`SEC_CONTACT_EMAIL` to a mailbox you read; otherwise a placeholder is used.
+For SEC fair access, set a monitored contact address in the request User-Agent:
 
 ```sh
 export SEC_CONTACT_EMAIL="you@example.com"
 ```
 
-## Installation
+## Development and tests
 
-1. Clone the repository:
-   ```sh
-   git clone https://github.com/yourusername/portfolio-pulse.git
-   cd portfolio-pulse
-   ```
-
-2. Install the required Python packages:
-   ```sh
-   pip install -r requirements.txt
-   ```
-
-3. Install system dependencies (see packages.txt):
-   ```sh
-   sudo xargs apt install -y < packages.txt
-   ```
-
-4. Run the Streamlit app:
-   ```sh
-   streamlit run "1_💼_Portfolio_Pulse.py"
-   ```
-
-## Usage
-
-1. Open the app in your web browser.
-2. Navigate between different dashboards (e.g., Equal-Weighted Index Dashboard).
-3. For the Equal-Weighted Index Dashboard:
-   - Select a date and period.
-   - Click "Analyze" to generate insights and visualizations.
-
-## Development
-
-- A devcontainer is provided in the `.devcontainer/` directory for a consistent development environment.
-- Open the project in VS Code using the Remote - Containers extension or Codespaces.
-- The devcontainer automatically installs system packages from `packages.txt` and Python dependencies from `requirements.txt`.
-
-### Running Tests
-
-Install the dev dependencies and run pytest from the repository root:
 ```sh
 pip install -r requirements-dev.txt
-pytest
+pytest -q
+python -m py_compile streamlit_app.py common/*.py views/*.py
 ```
 
-## Contributions
+Tests include portfolio math, optimizer constraints, provider adapters, archived membership, options, thematic scoring and SEC parsers. Streamlit integration tests exercise routing, persistent filters, allocations and provider failure states using deterministic data. CI also checks deployment dependencies.
 
-Contributions are welcome! Please fork the repository and submit a pull request for any enhancements or bug fixes.
-
-## License
-
-This project is licensed under the MIT License. See the LICENSE file for more details.
+See [the product and architecture review](docs/PRODUCT_REVIEW.md) for the codebase map, corrected behaviors, model contract and prioritized next improvements.

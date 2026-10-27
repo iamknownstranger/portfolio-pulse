@@ -38,14 +38,14 @@ def calculate_greeks(S, K, T, r, iv, option_type="call"):
 
 
 def calculate_max_pain(df):
-    """Strike where aggregate option-holder loss is maximized at expiry."""
+    """Settlement strike minimizing aggregate intrinsic payout to option holders."""
     if "CE_OI" not in df.columns or "PE_OI" not in df.columns:
         return 0
     strikes = df.index.values
     ce_oi = df["CE_OI"].values
     pe_oi = df["PE_OI"].values
     total_loss = [
-        np.sum(np.maximum(strikes - s, 0) * ce_oi) + np.sum(np.maximum(s - strikes, 0) * pe_oi)
+        np.sum(np.maximum(s - strikes, 0) * ce_oi) + np.sum(np.maximum(strikes - s, 0) * pe_oi)
         for s in strikes
     ]
     if not total_loss:

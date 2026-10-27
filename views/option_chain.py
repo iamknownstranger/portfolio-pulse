@@ -111,11 +111,10 @@ def fetch_option_data(index_key, expiry=None):
             return None, "Error", None
 
         # Select the nearest expiry date for yfinance data
-        chain = ticker.option_chain(expiry_dates[0])
         st.session_state.data_source = "yfinance (Fallback)"
         # Get the latest price from the ticker object itself
         underlying_price = ticker.history(period="1d")['Close'].iloc[-1]
-        return chain, "yfinance", underlying_price
+        return {"expiryDates": list(expiry_dates)}, "yfinance", underlying_price
     except Exception as e:
         st.error(f"Fallback yfinance API also failed: {e}")
         return None, "Error", None
@@ -293,7 +292,7 @@ if source == "NSE":
     expiry_dates = raw_data.get('records', {}).get('expiryDates', [])
     expiry_format, display_format = '%d-%b-%Y', '%d-%b-%Y'
 else: # yfinance
-    expiry_dates = raw_data.options
+    expiry_dates = raw_data["expiryDates"]
     expiry_format, display_format = '%Y-%m-%d', '%d-%b-%Y'
 
 if not expiry_dates:
@@ -315,7 +314,11 @@ if source == "NSE":
         st.stop()
     df = process_nse_data(raw_data, selected_raw_expiry, underlying_price)
 else: # yfinance
-    chain = yf.Ticker(INDEX_SYMBOLS[selected_index]["yf"]).option_chain(selected_raw_expiry)
+    try:
+        chain = yf.Ticker(INDEX_SYMBOLS[selected_index]["yf"]).option_chain(selected_raw_expiry)
+    except Exception:
+        st.warning("The selected option expiry is unavailable from Yahoo Finance. Try another expiry or refresh later.")
+        st.stop()
     df = process_yfinance_data(chain, selected_raw_expiry, underlying_price)
 
 tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🎛️ Strategy & Greeks", "📚 Trading Tips"])
@@ -339,7 +342,7 @@ with tab3:
     This tool is designed to support a specific strategy: entering a positional trade on a **Tuesday or Wednesday** for the **next week's expiry**, primarily banking on the **Max Pain Theory**.
 
     **✅ Entry Checklist (Tuesday/Wednesday):**
-    1.  **Select Next Week's Expiry:** The tool defaults to this. Confirm it's the date you want.
+    1.  **Select Your Intended Expiry:** The nearest available expiry appears first. Choose the date that matches your intended horizon.
     2.  **Check Market Sentiment (Dashboard Tab):** Is the PCR bullish (>1.2) or bearish (<0.7)? This sets your initial directional bias.
     3.  **Analyze IV Environment (Strategy Tab):**
         - **Low IV (<12%)**: Favorable for buying options (they are cheaper).
