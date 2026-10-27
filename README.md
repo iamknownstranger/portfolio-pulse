@@ -39,7 +39,7 @@ The portfolio is a hypothetical fully invested model rebalanced to fixed weights
 
 The overview leads with total return, annual volatility, maximum drawdown and Sharpe. Tabs provide asset details, return correlations and exports. Portfolio analytics use a shared, UI-independent calculation engine; benchmark prices align before returns are calculated.
 
-Sidebar categories with a single dashboard are direct links under the category name. Equities — Linear retains its six-page group.
+Equities — Linear is the first sidebar section, expanded by default, and Portfolio Pulse is the landing page. Categories with a single dashboard remain direct links under the category name.
 
 ## Market data and assumptions
 

@@ -11,7 +11,7 @@ The product's strongest existing component is Smart Money Radar: small thematic 
 | Area | Responsibility |
 | --- | --- |
 | `streamlit_app.py`, `1_💼_Portfolio_Pulse.py` | Equivalent entrypoints calling one router. |
-| `common/navigation.py` | Registry of 11 dashboards in six asset classes; single-page categories become direct parent links, while Equities — Linear remains grouped. Renders shared portfolio filters before dispatch. |
+| `common/navigation.py` | Registry of 11 dashboards in six asset classes; renders Equities — Linear first and expanded by default, with Portfolio Pulse as the landing page. Single-page categories remain direct parent links. Renders shared portfolio filters before dispatch. |
 | `common/sidebar.py` | Validated, explicitly applied ticker/date/benchmark/risk-free settings; session persistence; cache refresh. |
 | `common/data.py` | Cached Yahoo price and OHLCV adapters, conservative DuckDB fallback, snapshot benchmark and CSV reference access. |
 | `common/portfolio.py` | UI-independent weights, price alignment, wealth, performance/risk metrics, attribution, and dollar rebalance math. |
