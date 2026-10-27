@@ -50,3 +50,6 @@ jobs:
 
       - name: Import entrypoint dependencies
         run: /tmp/venv/bin/python -c "import streamlit, pandas, numpy, plotly, duckdb, polars, yfinance, pypfopt, scipy"
+
+      - name: Verify HTTP health and browser assets
+        run: /tmp/venv/bin/python scripts/check_streamlit_startup.py

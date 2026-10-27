@@ -7,6 +7,8 @@ polars==1.42.1
 pyportfolioopt==1.6.0
 requests==2.34.2
 scipy==1.17.1
+# Streamlit 1.58's gzip adapter requires Starlette's pre-1.0 response hooks.
+starlette==0.52.1
 streamlit==1.58.0
 streamlit-tags==1.2.8
 yfinance==1.5.1
