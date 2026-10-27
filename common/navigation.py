@@ -40,24 +40,29 @@ DEFAULT_PAGE = "views/portfolio_pulse.py"
 
 def run():
     """Entry point: configure the app and dispatch to the selected page."""
-    st.set_page_config(page_title="Portfolio Pulse", page_icon="💼", layout="wide")
-    nav = {}
+    st.set_page_config(page_title="Portfolio Pulse", page_icon="💼", layout="wide",
+                       initial_sidebar_state="expanded")
+    pages = {}
     for section, entries in PAGE_SECTIONS.items():
-        if len(entries) == 1:
-            # A one-page category is itself the destination: show one link
-            # with the parent's name and icon, without a redundant child row.
-            icon, _, title = section.partition(" ")
-            path, _, _, url_path = entries[0]
-            nav.setdefault("", []).append(
-                st.Page(path, title=title, icon=icon, url_path=url_path)
-            )
-        else:
-            nav[section] = [
-                st.Page(path, title=title, icon=icon, url_path=url_path,
-                        default=(path == DEFAULT_PAGE))
-                for path, title, icon, url_path in entries
-            ]
-    page = st.navigation(nav)
+        for path, title, icon, url_path in entries:
+            if len(entries) == 1:
+                icon, _, title = section.partition(" ")
+            pages[path] = st.Page(path, title=title, icon=icon, url_path=url_path,
+                                  default=(path == DEFAULT_PAGE))
+
+    # Native navigation always places ungrouped links before named sections.
+    # Register routes normally, then render sidebar links in registry order.
+    page = st.navigation(list(pages.values()), position="hidden")
+    with st.sidebar:
+        for section, entries in PAGE_SECTIONS.items():
+            if len(entries) == 1:
+                item = pages[entries[0][0]]
+                st.page_link(item, label=item.title, icon=item.icon, width="stretch")
+            else:
+                with st.expander(section, expanded=True):
+                    for path, *_ in entries:
+                        item = pages[path]
+                        st.page_link(item, label=item.title, icon=item.icon, width="stretch")
     if page.title in {entry[1] for entry in PAGE_SECTIONS["📈 Equities — Linear"]}:
         # Render shared widgets in the entrypoint so their identity remains
         # stable across pages (page-owned widgets are cleaned up on navigation).
