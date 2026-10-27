@@ -59,7 +59,7 @@ def run():
                 item = pages[entries[0][0]]
                 st.page_link(item, label=item.title, icon=item.icon, width="stretch")
             else:
-                with st.expander(section, expanded=True):
+                with st.expander(section, expanded=True, type="compact"):
                     for path, *_ in entries:
                         item = pages[path]
                         st.page_link(item, label=item.title, icon=item.icon, width="stretch")
