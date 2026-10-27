@@ -68,8 +68,11 @@ export SEC_CONTACT_EMAIL="you@example.com"
 pip install -r requirements-dev.txt
 pytest -q
 python -m py_compile streamlit_app.py common/*.py views/*.py
+python scripts/check_streamlit_startup.py
 ```
 
-Tests include portfolio math, optimizer constraints, provider adapters, archived membership, options, thematic scoring and SEC parsers. Streamlit integration tests exercise routing, persistent filters, allocations and provider failure states using deterministic data. CI also checks deployment dependencies.
+Tests include portfolio math, optimizer constraints, provider adapters, archived membership, options, thematic scoring and SEC parsers. Streamlit integration tests exercise routing, persistent filters, allocations and provider failure states using deterministic data. CI also starts a real server and verifies its health, HTML, JavaScript and favicon responses with gzip enabled.
+
+Keep the Starlette compatibility pin in `requirements.txt`: Streamlit 1.58's gzip middleware is incompatible with Starlette 1.x. An import check or healthy server response alone does not catch its static-file HTTP 500 error.
 
 See [the product and architecture review](docs/PRODUCT_REVIEW.md) for the codebase map, corrected behaviors, model contract and prioritized next improvements.
