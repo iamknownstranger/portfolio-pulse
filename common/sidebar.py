@@ -1,106 +1,90 @@
-import random
+"""Persistent, explicitly applied portfolio filters shared across equity pages."""
+
 from datetime import date, timedelta
 
-import pandas as pd
 import streamlit as st
-from streamlit_tags import st_tags
 
 from common.dates import resolve_start_date
+from common.portfolio import DEFAULT_SYMBOLS, normalize_symbols
 
-# Static fallback so the app still works when the Wikipedia scrape fails
-FALLBACK_SP500 = [
-    "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "META", "TSLA", "BRK-B",
-    "UNH", "JNJ", "JPM", "V", "PG", "XOM", "HD", "CVX", "MA", "ABBV", "PFE",
-    "AVGO", "COST", "DIS", "KO", "PEP", "TMO", "MRK", "WMT", "CSCO", "MCD",
-    "ACN", "ABT", "ADBE", "CRM", "LIN", "DHR", "NKE", "TXN", "NEE", "VZ",
-    "ORCL", "PM", "INTC", "WFC", "UPS", "BMY", "RTX", "QCOM", "HON", "AMD",
-    "T", "LOW", "UNP", "IBM", "SPGI", "GS", "CAT", "AMGN", "BA", "SBUX",
-    "INTU", "PLD", "BLK", "GE", "MDT", "ISRG", "AMT", "MS", "DE", "LMT",
-    "AXP", "BKNG", "GILD", "SYK", "ADI", "TJX", "MDLZ", "C", "MMC", "ADP",
-    "VRTX", "CVS", "SCHW", "MO", "CI", "REGN", "PGR", "SO", "ZTS", "CB",
-    "DUK", "BDX", "EOG", "ITW", "CL", "NOC", "CME", "FISV", "CSX", "ETN",
-]
+BENCHMARKS = {
+    "S&P 500": "^GSPC", "NASDAQ": "^IXIC", "Dow Jones": "^DJI",
+    "S&P 500 ETF (SPY)": "SPY", "NASDAQ 100 ETF (QQQ)": "QQQ",
+    "Top 100 US snapshot (equal weight)": "TOP100US",
+    "S&P 500 Technology": "^SP500-45", "S&P 500 Healthcare": "^SP500-35",
+    "S&P 500 Financials": "^SP500-40", "S&P 500 Industrials": "^SP500-20",
+    "S&P 500 Consumer Discretionary": "^SP500-25",
+}
 
 
-@st.cache_data(ttl=86400)
-def get_sp500_tickers():
-    """Scrape S&P 500 constituents from Wikipedia, cached for a day.
+def portfolio_settings():
+    if "portfolio_settings" not in st.session_state:
+        st.session_state["portfolio_settings"] = {
+            "symbols": DEFAULT_SYMBOLS.copy(),
+            "start": date.today() - timedelta(days=3 * 365), "end": date.today(),
+            "period": "ITD", "benchmark": "S&P 500", "risk_free_rate": 0.0,
+        }
+    return st.session_state["portfolio_settings"]
 
-    Falls back to a static list when the network or page layout fails.
-    """
-    try:
-        url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-        table = pd.read_html(url)
-        tickers = table[0]['Symbol'].tolist()
-        # Some tickers may have periods (e.g., BRK.B), which yfinance uses as dashes (e.g., BRK-B)
-        return [ticker.replace('.', '-') for ticker in tickers]
-    except Exception:
-        return FALLBACK_SP500
-
-
-# Common list of suggestions (could also be imported from another module)
-SP_500 = get_sp500_tickers()
 
 def render_sidebar():
-    st.sidebar.title("Portfolio Filters")
-    st.sidebar.info("Provide stock tickers and select a date range to analyze your portfolio performance.")
-    
-    # Ensure default symbols exist in session_state
-    if 'default_symbols' not in st.session_state:
-        st.session_state.default_symbols = random.sample(SP_500, 7)
-        
-    with st.sidebar.form(key='portfolio_form'):
-        symbols = st_tags(
-            label='Enter the name or symbol of the stock in your portfolio',
-            text='Press enter to add more',
-            value=st.session_state.default_symbols,
-            suggestions=SP_500
-        )
-        start_date_value = date.today() - timedelta(days=3*365)
-        end_date_value = date.today()
-        start_date = st.date_input('Start date', value=start_date_value)
-        end_date = st.date_input('End date', value=end_date_value)
-        period = st.radio(
-            "Period", ["WTD", "MTD", "YTD", "ITD"], horizontal=True, index=3,
-            help="WTD/MTD/YTD derive the start date from the end date; ITD uses the dates above.")
-        # --- Enhanced benchmark index selector ---
-        benchmark_options = {
-            "S&P 500": "^GSPC",
-            "NASDAQ": "^IXIC",
-            "Dow Jones": "^DJI",
-            "Top 100 US Market Cap": "TOP100US",
-            "S&P 500 Technology": "^SP500-45",
-            "S&P 500 Healthcare": "^SP500-35",
-            "S&P 500 Financials": "^SP500-40",
-            "S&P 500 Industrials": "^SP500-20",
-            "S&P 500 Consumer Discretionary": "^SP500-25"
-        }
-        benchmark_name = st.selectbox("Benchmark Index", list(benchmark_options.keys()), index=0)
-        st.form_submit_button("Analyze")
+    settings = portfolio_settings()
+    st.sidebar.title("Your portfolio")
+    st.sidebar.caption("Build a model. Explore performance. Understand the risk.")
+    # Persistent settings are independent of widget keys: Streamlit removes
+    # page-owned widget state when navigating to another page.
+    defaults = {
+        "_pf_symbols": ", ".join(settings["symbols"]), "_pf_start": settings["start"],
+        "_pf_end": settings["end"], "_pf_period": settings["period"],
+        "_pf_benchmark": settings["benchmark"], "_pf_rf": settings["risk_free_rate"] * 100,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+    with st.sidebar.form("portfolio_form", enter_to_submit=False):
+        raw_symbols = st.text_area("Tickers", key="_pf_symbols", height=90,
+                                   help="Paste symbols separated by commas or spaces. Up to 30 assets, including ETFs.")
+        start = st.date_input("Start date", key="_pf_start", max_value=date.today())
+        end = st.date_input("End date", key="_pf_end", max_value=date.today())
+        period = st.radio("Period", ["WTD", "MTD", "YTD", "ITD"], key="_pf_period", horizontal=True,
+                          help="ITD uses your dates; other periods derive the start from the end date.")
+        benchmark = st.selectbox("Benchmark", list(BENCHMARKS), key="_pf_benchmark")
+        risk_free = st.number_input("Annual risk-free rate (%)", min_value=0.0, max_value=30.0,
+                                    step=0.25, key="_pf_rf")
+        submitted = st.form_submit_button("Update analysis", type="primary", width="stretch")
+    if submitted:
+        try:
+            symbols = normalize_symbols(raw_symbols)
+            effective_start = resolve_start_date(period, start, end)
+            if effective_start >= end:
+                raise ValueError("Choose an end date after the start date. Short periods may need a longer window.")
+        except ValueError as exc:
+            st.sidebar.error(str(exc))
+            st.stop()
+        if set(symbols) != set(settings["symbols"]):
+            st.session_state.pop("portfolio_weights", None)
+        settings = {"symbols": symbols, "start": start, "end": end, "period": period,
+                    "benchmark": benchmark, "risk_free_rate": risk_free / 100}
+        st.session_state["portfolio_settings"] = settings
+    if st.sidebar.button("Refresh market data", width="stretch",
+                         help="Clear cached market prices and reload the applied selection."):
+        from common.data import get_benchmark_data, get_ohlcv_data, get_price_data, get_top100us_index
 
-    st.sidebar.markdown("---")    
-    st.sidebar.markdown("""
-        <style>
-        /* Ensure the sidebar uses full viewport height */
-        .css-1d391kg, .sidebar .sidebar-content { 
-            display: flex; 
-            flex-direction: column; 
-            height: 100vh; 
-        }
-        /* Let the main content grow, forcing the footer to the bottom */
-        .css-1d391kg > div:nth-child(2), .sidebar .sidebar-content > div:first-child { 
-            flex: 1;
-        }
-        .sidebar-footer {
-            text-align: center;
-            padding: 10px;
-            font-size: 0.9rem;
-            color: #888;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-    st.sidebar.markdown('<div class="sidebar-footer">Built with 💓 by Chandra Sekhar Mullu</div>', unsafe_allow_html=True)
-    # Apply the period selection, then return benchmark symbol as well
-    start_date = resolve_start_date(period, start_date, end_date)
-    return symbols, start_date.isoformat(), end_date.isoformat(), period, benchmark_options[benchmark_name], benchmark_name
+        for fetcher in (get_price_data, get_benchmark_data, get_top100us_index, get_ohlcv_data):
+            fetcher.clear()
+    effective_start = resolve_start_date(settings["period"], settings["start"], settings["end"])
+    st.sidebar.caption(f"{len(settings['symbols'])} assets · {effective_start:%d %b %Y} – {settings['end']:%d %b %Y}")
+    custom = st.session_state.get("portfolio_weights")
+    st.sidebar.caption("Allocation: custom model" if custom else "Allocation: equal weight")
+    st.sidebar.page_link("views/holdings_exposure.py", label="Edit model allocations", icon="📋")
+    st.sidebar.divider()
+    st.sidebar.caption("Research models · Daily rebalancing · No trading costs\n\nBuilt by Chandra Sekhar Mullu")
+    return portfolio_filters()
 
+
+def portfolio_filters():
+    """Applied filters for views; shared widgets are rendered by the app router."""
+    settings = portfolio_settings()
+    start = resolve_start_date(settings["period"], settings["start"], settings["end"])
+    return (settings["symbols"], start.isoformat(), settings["end"].isoformat(),
+            settings["period"], BENCHMARKS[settings["benchmark"]], settings["benchmark"])

@@ -3,93 +3,71 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from common.data import get_benchmark_data, get_price_data, load_companies_csv
-from common.sidebar import render_sidebar
+from common.data import get_benchmark_data
+from common.portfolio import compare_with_benchmark, performance_stats, relative_stats
+from common.portfolio_ui import format_value, growth_chart, headline_metrics, load_portfolio, model_methodology
+from common.sidebar import portfolio_settings, portfolio_filters
 
-st.title("📊 Performance Analytics")
+st.title("Performance Analytics")
+st.caption("Find what drove your returns and compare the model on a common benchmark calendar.")
+symbols, start, end, period, benchmark_symbol, benchmark_name = portfolio_filters()
+portfolio = load_portfolio(symbols, start, end)
+headline_metrics(portfolio)
+rf = portfolio_settings()["risk_free_rate"]
 
-symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()
-
-df = get_price_data(symbols, start_date, end_date)
-benchmark_series = get_benchmark_data(benchmark_symbol, start_date, end_date)
-
-# Load actual data
-df_companies = load_companies_csv()
-
-# FILTER by symbols
-if "Symbol" in df_companies.columns and symbols:
-    df_companies = df_companies[df_companies["Symbol"].isin(symbols)]
-
-# Market Cap Distribution Histogram (using actual data)
-st.subheader("Market Cap Distribution")
-fig_hist = px.histogram(df_companies, x="marketcap", nbins=50,
-                        title="Distribution of Market Caps",
-                        labels={"marketcap": "Market Cap"})
-st.plotly_chart(fig_hist, use_container_width=True)
-
-# Top 5 Companies Contribution by Market Cap
-st.subheader("Top 5 Contributors by Market Cap")
-top5 = df_companies.sort_values("marketcap", ascending=False).head(5)
-fig_top5 = px.bar(top5, x="Name", y="marketcap", title="Top 5 Companies Contribution",
-                  labels={"marketcap": "Market Cap"})
-st.plotly_chart(fig_top5, use_container_width=True)
-
-if df.empty or benchmark_series.empty:
-    st.warning("No price data available for the selected stocks, benchmark, and date range. "
-               "Please adjust your selection and try again.")
-    st.stop()
-
-# --- Time-Series Charts (real portfolio and benchmark data) ---
-st.subheader(f"Cumulative Returns vs {benchmark_name}")
-stock_daily = df.pct_change().dropna()
-portfolio_daily = stock_daily.mean(axis=1)
-benchmark_daily = benchmark_series.pct_change().dropna()
-
-portfolio_cum = (1 + portfolio_daily).cumprod()
-benchmark_cum = (1 + benchmark_daily).cumprod()
-portfolio_cum.index = pd.to_datetime(portfolio_cum.index)
-
-df_returns = pd.concat([
-    portfolio_cum.rename("Portfolio"),
-    benchmark_cum.rename(benchmark_name),
-], axis=1, join="inner").dropna()
-
-fig_returns = px.line(df_returns, x=df_returns.index, y=df_returns.columns,
-                      title="Cumulative Returns", labels={"x": "Date", "value": "Growth of 1"})
-st.plotly_chart(fig_returns, use_container_width=True)
-
-# --- Performance Metrics Calculation ---
-aligned = pd.concat([
-    portfolio_daily.rename("portfolio"),
-    benchmark_daily.rename("benchmark"),
-], axis=1, join="inner").dropna()
-
-annual_return = aligned["portfolio"].mean() * 252 * 100
-annual_vol = aligned["portfolio"].std() * np.sqrt(252) * 100
-benchmark_annual_return = aligned["benchmark"].mean() * 252 * 100
-
-benchmark_var = aligned["benchmark"].var()
-beta = aligned["portfolio"].cov(aligned["benchmark"]) / benchmark_var if benchmark_var else np.nan
-alpha = annual_return - beta * benchmark_annual_return if pd.notnull(beta) else np.nan
-downside_std = aligned["portfolio"][aligned["portfolio"] < 0].std() * np.sqrt(252)
-sortino = (annual_return / 100) / downside_std if downside_std else np.nan
-treynor = (annual_return / 100) / beta if beta else np.nan
-
-# --- Key Performance Metrics ---
-st.subheader("Key Performance Metrics")
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Alpha", f"{alpha:.2f}", help="Annualized excess return over the benchmark (CAPM), in %.")
-col2.metric("Beta", f"{beta:.2f}", help="Sensitivity of the portfolio to benchmark moves.")
-col3.metric("Sortino Ratio", f"{sortino:.2f}", help="Return per unit of downside volatility.")
-col4.metric("Treynor Ratio", f"{treynor:.2f}", help="Return per unit of market (beta) risk.")
-
-# --- Contribution Analysis (per-stock contribution to portfolio return) ---
-st.subheader("Top Contributors / Detractors")
-# Equal-weighted portfolio: each stock contributes its cumulative return / N
-stock_cum_returns = ((1 + stock_daily).cumprod().iloc[-1] - 1) * 100
-contribution = (stock_cum_returns / len(stock_daily.columns)).sort_values(ascending=False)
-df_contrib = contribution.reset_index()
-df_contrib.columns = ["Asset", "Contribution"]
-fig_contrib = px.bar(df_contrib, x="Asset", y="Contribution",
-                     title="Contribution to Portfolio Return (%, equal-weighted)")
-st.plotly_chart(fig_contrib, use_container_width=True)
+comparison, contributions, monthly = st.tabs(["Benchmark comparison", "Return attribution", "Monthly returns"])
+with comparison:
+    benchmark = get_benchmark_data(benchmark_symbol, start, end)
+    if benchmark.empty:
+        st.info("Benchmark data is unavailable. Return attribution and monthly returns are still available.")
+    else:
+        try:
+            aligned, benchmark_returns, benchmark_wealth = compare_with_benchmark(portfolio.prices, benchmark, portfolio.weights)
+        except ValueError:
+            st.info("At least three overlapping portfolio and benchmark price dates are needed.")
+        else:
+            growth_chart({"Portfolio": aligned.wealth, benchmark_name: benchmark_wealth})
+            st.caption(f"Comparison window: {aligned.prices.index[0]:%d %b %Y} – {aligned.prices.index[-1]:%d %b %Y}. "
+                       "Both series start at the same value on the same date.")
+            relative = relative_stats(aligned.returns, benchmark_returns, rf)
+            cols = st.columns(4)
+            for col, label, key, pct, help_text in [
+                (cols[0], "Annual alpha", "alpha", True, "CAPM alpha using your risk-free rate and the aligned observation window."),
+                (cols[1], "Beta", "beta", False, "Sensitivity to benchmark returns; unavailable for a constant benchmark."),
+                (cols[2], "Tracking error", "tracking_error", True, "Annualized volatility of portfolio minus benchmark returns."),
+                (cols[3], "Information ratio", "information_ratio", False, "Annualized active return per unit of tracking error."),
+            ]:
+                col.metric(label, format_value(relative[key], pct), help=help_text)
+            p_stats = aligned.stats(rf)
+            b_stats = performance_stats(benchmark_returns, rf, start=aligned.prices.index[0])
+            metrics = {"Total return": "total_return", "CAGR": "cagr", "Annual volatility": "volatility",
+                       "Max drawdown": "max_drawdown", "Sharpe ratio": "sharpe", "Sortino ratio": "sortino"}
+            table = pd.DataFrame({name: {label: format_value(stats[key], "ratio" not in label)
+                                        for label, key in metrics.items()}
+                                  for name, stats in [("Portfolio", p_stats), (benchmark_name, b_stats)]})
+            st.dataframe(table, width="stretch")
+with contributions:
+    contribution = portfolio.contributions().sort_values() * 100
+    table = pd.DataFrame({"Asset": contribution.index, "Contribution (pp)": contribution.values})
+    fig = px.bar(table, x="Contribution (pp)", y="Asset", orientation="h", color="Contribution (pp)",
+                 color_continuous_scale="RdYlGn", title="Each asset's contribution to total portfolio return")
+    st.plotly_chart(fig, width="stretch")
+    st.caption("Daily weighted returns are linked through portfolio growth. Contributions sum to total return, "
+               "including the effect of daily rebalancing. Values are percentage points.")
+    st.dataframe(table, hide_index=True, width="stretch")
+    st.download_button("Download return attribution", table.to_csv(index=False).encode(), "return_attribution.csv",
+                       "text/csv", on_click="ignore")
+with monthly:
+    monthly_returns = (1 + portfolio.returns).resample("ME").prod(min_count=1) - 1
+    if len(monthly_returns) < 2:
+        st.info("Extend the date range to compare multiple months.")
+    else:
+        frame = pd.DataFrame({"Year": monthly_returns.index.year, "Month": monthly_returns.index.month,
+                              "Return (%)": monthly_returns.values * 100})
+        matrix = frame.pivot(index="Year", columns="Month", values="Return (%)").reindex(columns=range(1, 13))
+        matrix.columns = pd.date_range("2025-01-01", periods=12, freq="MS").strftime("%b")
+        fig = px.imshow(matrix, text_auto=".1f", color_continuous_scale="RdYlGn", color_continuous_midpoint=0,
+                        aspect="auto", labels={"color": "Return (%)"})
+        st.plotly_chart(fig, width="stretch")
+        st.caption("The first and last month may contain only part of a month. Missing months have no return observations.")
+model_methodology()

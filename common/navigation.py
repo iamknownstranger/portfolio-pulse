@@ -41,12 +41,27 @@ DEFAULT_PAGE = "views/portfolio_pulse.py"
 def run():
     """Entry point: configure the app and dispatch to the selected page."""
     st.set_page_config(page_title="Portfolio Pulse", page_icon="💼", layout="wide")
-    nav = {
-        section: [
-            st.Page(path, title=title, icon=icon, url_path=url_path,
-                    default=(path == DEFAULT_PAGE))
-            for path, title, icon, url_path in entries
-        ]
-        for section, entries in PAGE_SECTIONS.items()
-    }
-    st.navigation(nav).run()
+    nav = {}
+    for section, entries in PAGE_SECTIONS.items():
+        if len(entries) == 1:
+            # A one-page category is itself the destination: show one link
+            # with the parent's name and icon, without a redundant child row.
+            icon, _, title = section.partition(" ")
+            path, _, _, url_path = entries[0]
+            nav.setdefault("", []).append(
+                st.Page(path, title=title, icon=icon, url_path=url_path)
+            )
+        else:
+            nav[section] = [
+                st.Page(path, title=title, icon=icon, url_path=url_path,
+                        default=(path == DEFAULT_PAGE))
+                for path, title, icon, url_path in entries
+            ]
+    page = st.navigation(nav)
+    if page.title in {entry[1] for entry in PAGE_SECTIONS["📈 Equities — Linear"]}:
+        # Render shared widgets in the entrypoint so their identity remains
+        # stable across pages (page-owned widgets are cleaned up on navigation).
+        from common.sidebar import render_sidebar
+
+        render_sidebar()
+    page.run()

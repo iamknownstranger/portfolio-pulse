@@ -5,14 +5,16 @@ previously copy-pasted (with bugs) across every page.
 """
 
 import time
+from pathlib import Path
 
 import duckdb
 import pandas as pd
 import streamlit as st
 import yfinance as yf
 
-MARKET_DATA_DB = "data/market_data.db"
-TOP100_CSV = "data/largest-companies-in-the-usa-by-market-cap.csv"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+MARKET_DATA_DB = str(DATA_DIR / "market_data.db")
+TOP100_CSV = str(DATA_DIR / "largest-companies-in-the-usa-by-market-cap.csv")
 
 
 def _fetch_from_duckdb(tickers, start, end, db_path=MARKET_DATA_DB):
@@ -38,7 +40,7 @@ def _fetch_from_duckdb(tickers, start, end, db_path=MARKET_DATA_DB):
     return df.pivot(index="date", columns="symbol", values="close_price")
 
 
-def _yf_download_with_retry(tickers, start, end, max_retries=3, retry_delay=5, **kwargs):
+def _yf_download_with_retry(tickers, start, end, max_retries=3, retry_delay=5, adjusted=False, **kwargs):
     """Call yf.download, retrying only on rate limits.
 
     Returns None when the download could not be completed, so callers can
@@ -46,7 +48,10 @@ def _yf_download_with_retry(tickers, start, end, max_retries=3, retry_delay=5, *
     """
     for attempt in range(max_retries):
         try:
-            return yf.download(tickers, start=start, end=end, auto_adjust=False, **kwargs)
+            # All public helpers use inclusive dates, including DuckDB.
+            exclusive_end = (pd.Timestamp(end) + pd.Timedelta(days=1)).date().isoformat()
+            return yf.download(tickers, start=start, end=exclusive_end, auto_adjust=adjusted,
+                               progress=False, timeout=15, **kwargs)
         except Exception as e:
             if "rate limit" in str(e).lower() or "too many requests" in str(e).lower():
                 if attempt < max_retries - 1:
@@ -61,17 +66,18 @@ def _yf_download_with_retry(tickers, start, end, max_retries=3, retry_delay=5, *
     return None
 
 
-def _fetch_from_yfinance(tickers, start, end, max_retries=3, retry_delay=5):
+def _fetch_from_yfinance(tickers, start, end, max_retries=3, retry_delay=5, adjusted=False):
     """Fetch close prices from Yahoo Finance with rate-limit retries."""
     raw = _yf_download_with_retry(
-        tickers, start, end, max_retries, retry_delay, multi_level_index=False,
+        tickers, start, end, max_retries, retry_delay, adjusted=adjusted,
     )
-    if raw is None or "Close" not in raw:
+    if raw is None or raw.empty or "Close" not in raw:
         return pd.DataFrame()
     df_yf = raw["Close"]
     if isinstance(df_yf, pd.Series):
         df_yf = df_yf.to_frame(name=tickers[0] if isinstance(tickers, (list, tuple)) else tickers)
-    df_yf.index = pd.to_datetime(df_yf.index).date
+    df_yf = df_yf.copy()
+    df_yf.index = pd.to_datetime(df_yf.index, utc=True).tz_convert(None).normalize()
     return df_yf.dropna(axis=1, how="all")
 
 
@@ -84,7 +90,7 @@ def _fetch_ohlcv_from_yfinance(tickers, start, end, max_retries=3, retry_delay=5
     yfinance returns a (field, ticker) MultiIndex — two levels even for a
     single ticker — so each field slices out as a ticker-columned frame.
     """
-    raw = _yf_download_with_retry(tickers, start, end, max_retries, retry_delay)
+    raw = _yf_download_with_retry(tickers, start, end, max_retries, retry_delay, adjusted=True)
     if raw is None or raw.empty:
         return {}
 
@@ -116,7 +122,7 @@ def _fetch_ohlcv_from_yfinance(tickers, start, end, max_retries=3, retry_delay=5
     }
 
 
-@st.cache_data(ttl=86400)
+@st.cache_data(ttl=3600)
 def get_ohlcv_data(tickers, start, end):
     """Close/High/Low/Volume frames for tickers, indexed by timestamp.
 
@@ -124,25 +130,36 @@ def get_ohlcv_data(tickers, start, end):
     money-flow signals rather than the close-only series get_price_data
     returns. Yahoo Finance only — the local DuckDB store holds closes alone.
     """
-    tickers = list(tickers)
+    tickers = [tickers] if isinstance(tickers, str) else list(tickers)
     if not tickers:
         return {}
     return _fetch_ohlcv_from_yfinance(tickers, start, end)
 
 
-@st.cache_data(ttl=86400)
-def get_price_data(tickers, start, end):
-    """Historical close prices for tickers, DuckDB first, yfinance fallback.
+@st.cache_data(ttl=3600)
+def get_price_data(tickers, start, end, adjusted=False):
+    """Historical close prices over an inclusive date range.
 
-    Returns a DataFrame indexed by date with one column per symbol.
+    Raw prices use DuckDB only for complete local coverage; adjusted prices
+    always use Yahoo. Returns a datetime-indexed frame, one column per symbol.
     """
-    tickers = list(tickers)
-    if not tickers:
+    tickers = list(dict.fromkeys([tickers] if isinstance(tickers, str) else tickers))
+    if not tickers or pd.Timestamp(start) > pd.Timestamp(end):
         return pd.DataFrame()
+    # The local store has no adjustment metadata. Mixing its raw closes with
+    # dividend/split-adjusted observations would corrupt portfolio returns.
+    if adjusted:
+        return _fetch_from_yfinance(tickers, start, end, adjusted=True)
     try:
         df = _fetch_from_duckdb(tickers, start, end)
-        if not df.empty:
-            return df
+        if not df.empty and set(tickers).issubset(df.columns):
+            df.index = pd.to_datetime(df.index)
+            # Be conservative about local coverage: a single surviving ticker
+            # or old snapshot must not silently satisfy the entire request.
+            first = pd.offsets.BDay().rollforward(pd.Timestamp(start))
+            last = pd.offsets.BDay().rollback(pd.Timestamp(end))
+            if df.notna().all().all() and df.index.min() <= first and df.index.max() >= last:
+                return df.reindex(columns=tickers)
     except duckdb.CatalogException:
         # Local database has no market_data table yet — expected, use yfinance.
         pass
@@ -151,7 +168,7 @@ def get_price_data(tickers, start, end):
     return _fetch_from_yfinance(tickers, start, end)
 
 
-@st.cache_data(ttl=86400)
+@st.cache_data(ttl=3600)
 def get_top100us_index(start, end):
     """Equal-weighted index of the top 100 US companies by market cap."""
     df_companies = pd.read_csv(TOP100_CSV)
@@ -161,15 +178,23 @@ def get_top100us_index(start, end):
         .head(100)["Symbol"]
         .tolist()
     )
-    prices = _fetch_from_yfinance(tickers, start, end)
+    prices = _fetch_from_yfinance(tickers, start, end, adjusted=True)
     if prices.empty:
         return pd.Series(dtype=float)
-    index_val = prices.mean(axis=1)
-    index_val.index = pd.to_datetime(index_val.index)
-    return index_val.dropna()
+    from common.portfolio import analyze_portfolio
+
+    # A fixed, historical CSV universe: this is a snapshot basket, not the
+    # point-in-time top 100. Require every constituent rather than silently
+    # reweighting around failed downloads.
+    if not set(tickers).issubset(prices.columns):
+        return pd.Series(dtype=float)
+    try:
+        return analyze_portfolio(prices.reindex(columns=tickers)).wealth
+    except ValueError:
+        return pd.Series(dtype=float)
 
 
-@st.cache_data(ttl=86400)
+@st.cache_data(ttl=3600)
 def get_benchmark_data(symbol, start, end):
     """Historical close series for a benchmark index symbol.
 
@@ -178,7 +203,7 @@ def get_benchmark_data(symbol, start, end):
     """
     if symbol == "TOP100US":
         return get_top100us_index(start, end)
-    prices = _fetch_from_yfinance([symbol], start, end)
+    prices = _fetch_from_yfinance([symbol], start, end, adjusted=True)
     if prices.empty:
         return pd.Series(dtype=float)
     series = prices.iloc[:, 0].dropna()
@@ -187,9 +212,9 @@ def get_benchmark_data(symbol, start, end):
 
 
 @st.cache_data
-def load_companies_csv(path="data/companiesmarketcap.com - Largest American companies by market capitalization.csv"):
+def load_companies_csv(path=None):
     """Market-cap CSV with numeric columns coerced."""
-    df = pd.read_csv(path)
+    df = pd.read_csv(path or DATA_DIR / "companiesmarketcap.com - Largest American companies by market capitalization.csv")
     df["marketcap"] = pd.to_numeric(df["marketcap"], errors="coerce")
     if "price (INR)" in df.columns:
         df["price (INR)"] = pd.to_numeric(df["price (INR)"], errors="coerce")

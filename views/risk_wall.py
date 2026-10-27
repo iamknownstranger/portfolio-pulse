@@ -1,97 +1,57 @@
-import streamlit as st
-import plotly.express as px
 import numpy as np
-from scipy.stats import norm
-from common.data import get_price_data
-from common.sidebar import render_sidebar
+import plotly.express as px
+import streamlit as st
 
-st.title("⚠️ Risk Wall")
+from common.portfolio import drawdowns
+from common.portfolio_ui import format_value, headline_metrics, load_portfolio, model_methodology
+from common.sidebar import portfolio_filters
 
-symbols, start_date, end_date, period, benchmark_symbol, benchmark_name = render_sidebar()
+st.title("Risk Wall")
+st.caption("Understand the losses behind the return, and what another shock could mean.")
+symbols, start, end, *_ = portfolio_filters()
+portfolio = load_portfolio(symbols, start, end)
+stats = headline_metrics(portfolio)
 
-df = get_price_data(symbols, start_date, end_date)
+st.subheader("One-day loss estimates")
+st.caption("All three estimates below use a 95% confidence level and a one-observation horizon. Historical losses can exceed them.")
+cols = st.columns(3)
+for col, label, key, help_text in [
+    (cols[0], "Historical VaR · 95%", "var_95", "5th percentile of observed returns, expressed as a non-negative loss."),
+    (cols[1], "Expected shortfall · 95%", "cvar_95", "Average loss in the worst 5% of observations."),
+    (cols[2], "EWMA VaR · 95%", "ewma_var_95", "Normal approximation with daily EWMA second moment, decay 0.94; no annualization."),
+]:
+    col.metric(label, format_value(stats[key], True), help=help_text)
 
-if df.empty:
-    st.warning("No price data available for the selected stocks and date range. Please adjust your selection and try again.")
-    st.stop()
-
-# --- Risk Metrics ---
-# Compute daily returns and portfolio returns
-returns = df.pct_change().dropna()
-portfolio_returns = returns.mean(axis=1)
-
-# Annualized volatility from daily returns
-volatility = portfolio_returns.std() * np.sqrt(252)
-
-# Historical VaR (95% confidence, i.e. 5th percentile) and CVaR
-var_value = -np.percentile(portfolio_returns, 5) * 100
-cvar_value = -portfolio_returns[portfolio_returns <= np.percentile(portfolio_returns, 5)].mean() * 100
-
-# EWMA volatility and VaR using decay factor lambda = 0.94
-lambda_ = 0.94
-# Weights: most recent day gets weight 1, older days get lower weights
-weights = np.array([lambda_**i for i in range(len(portfolio_returns)-1, -1, -1)])
-sigma_ewma = np.sqrt(np.sum(weights * portfolio_returns**2) / np.sum(weights)) * np.sqrt(252)
-ewma_var = abs(norm.ppf(0.05)) * sigma_ewma * 100
-
-# Stress Loss: worst daily return in percentage terms
-stress_loss = -np.min(portfolio_returns) * 100
-
-# Sharpe Ratio (assuming risk-free rate = 0)
-sharpe_ratio = (portfolio_returns.mean() * 252) / volatility if volatility != 0 else np.nan
-
-# Display risk metrics in two rows
-cols1 = st.columns(3)
-cols1[0].metric("Portfolio Volatility", f"{volatility*100:.2f}%")
-cols1[1].metric("Historical VaR (95%)", f"{var_value:.2f}%")
-cols1[2].metric("CVaR (95%)", f"{cvar_value:.2f}%")
-
-cols2 = st.columns(3)
-cols2[0].metric("EWMA VaR (95%)", f"{ewma_var:.2f}%")
-cols2[1].metric("Stress Loss", f"{stress_loss:.2f}%")
-cols2[2].metric("Sharpe Ratio", f"{sharpe_ratio:.2f}")
-
-# --- Drawdown Analysis (using portfolio returns) ---
-cum_returns = (1 + portfolio_returns).cumprod()
-running_max = cum_returns.cummax()
-drawdown_series = (cum_returns - running_max) / running_max * 100
-max_drawdown = drawdown_series.min()
-st.subheader("Drawdown Analysis")
-fig_dd = px.line(x=cum_returns.index, y=drawdown_series, 
-                 title="Portfolio Drawdown Over Time",
-                 labels={"x": "Date", "y": "Drawdown (%)"})
-st.plotly_chart(fig_dd, use_container_width=True)
-st.metric("Max Drawdown", f"{max_drawdown:.2f}%")
-
-
-# Calculate and display analytics
-st.subheader("Correlation Matrix")
-st.write("""A Coefficient of **correlation** is a statistical measure of the relationship between two variables. It varies from -1 to 1, with 1 or -1 indicating perfect correlation. A correlation value close to 0 indicates no association between the variables. A correlation matrix is a table showing correlation coefficients between variables.""")
-correlation_matrix = df.corr(method='pearson')
-correlation_heatmap = px.imshow(correlation_matrix, title='Correlation between Stocks in your portfolio')
-st.plotly_chart(correlation_heatmap, use_container_width=True)
-
-
-# --- Stress Testing: hypothetical one-day market shock ---
-st.subheader("Stress Testing")
-st.write("Scenario: a one-day market shock hits the portfolio today. "
-         "The table shows the portfolio value (growth of 1) and the resulting "
-         "drawdown from its historical peak under each shock size.")
-current_value = cum_returns.iloc[-1]
-peak_value = running_max.iloc[-1]
-shock_cols = st.columns(3)
-for col, shock in zip(shock_cols, [-0.05, -0.10, -0.20]):
-    shocked_value = current_value * (1 + shock)
-    shocked_drawdown = (shocked_value - peak_value) / peak_value * 100
-    col.metric(f"{shock:.0%} Shock",
-               f"{shocked_value:.3f}",
-               f"{shocked_drawdown:.2f}% from peak")
-
-# --- Portfolio Volatility Plot ---
-rolling_vol = portfolio_returns.rolling(window=30).std() * np.sqrt(252) * 100
-st.subheader("Rolling Portfolio Volatility (30-day)")
-fig_vol = px.line(x=rolling_vol.index, y=rolling_vol,
-                  title="30-Day Rolling Portfolio Volatility",
-                  labels={"x": "Date", "y": "Volatility (%)"})
-st.plotly_chart(fig_vol, use_container_width=True)
-
+losses, volatility, correlation = st.tabs(["Drawdowns & stress", "Volatility", "Correlations"])
+with losses:
+    dd = drawdowns(portfolio.wealth) * 100
+    fig = px.area(x=dd.index, y=dd, labels={"x": "Date", "y": "Drawdown (%)"},
+                  title="Distance from the running peak", color_discrete_sequence=["#F58C93"])
+    st.plotly_chart(fig, width="stretch")
+    st.subheader("Stress your model value")
+    value = st.number_input("Illustrative portfolio value ($)", min_value=1.0, value=10000.0, step=1000.0)
+    cols = st.columns(3)
+    peak_ratio = portfolio.wealth.max() / portfolio.wealth.iloc[-1]
+    for col, shock in zip(cols, [-0.05, -0.10, -0.20]):
+        with col.container(border=True):
+            st.metric(f"{shock:.0%} shock", format_value(value * (1 + shock), dollars=True),
+                      format_value(value * shock, dollars=True))
+            st.caption(f"Resulting drawdown from historical peak: {(1 + shock) / peak_ratio - 1:.2%}")
+    st.caption("Illustrative simultaneous shocks to portfolio value. These are scenarios, not probability estimates.")
+with volatility:
+    window = st.select_slider("Rolling window (observations)", [10, 21, 63], value=21)
+    rolling = portfolio.returns.rolling(window).std() * np.sqrt(252) * 100
+    if rolling.dropna().empty:
+        st.info(f"At least {window} return observations are needed for this chart.")
+    else:
+        fig = px.line(x=rolling.index, y=rolling, labels={"x": "Date", "y": "Annual volatility (%)"})
+        st.plotly_chart(fig, width="stretch")
+    fig = px.histogram(x=portfolio.returns * 100, nbins=45, labels={"x": "Portfolio return (%)"},
+                       title="Observed return distribution")
+    st.plotly_chart(fig, width="stretch")
+with correlation:
+    st.caption("Correlations are calculated from returns rather than price levels.")
+    fig = px.imshow(portfolio.asset_returns.corr(), zmin=-1, zmax=1, text_auto=".2f",
+                    color_continuous_scale="RdBu_r", aspect="auto")
+    st.plotly_chart(fig, width="stretch")
+model_methodology()
