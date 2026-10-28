@@ -58,7 +58,6 @@ def run():
     page = st.navigation(list(pages.values()), position="hidden")
     with st.sidebar:
         workspace_brand()
-        st.html('<div class="pp-nav-label">Research workspace</div>')
         with st.container(key="workspace_navigation"):
             for section, entries in PAGE_SECTIONS.items():
                 if len(entries) == 1:

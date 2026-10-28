@@ -24,16 +24,23 @@
 }
 .pp-brand strong { display: block; color: #edf3fa; font-size: 17px; font-weight: 650; letter-spacing: -.5px; }
 .pp-brand span { display: block; color: #7c8fa5; font-size: 9px; letter-spacing: 1.6px; margin-top: 4px; }
-.pp-nav-label, .pp-eyebrow {
+.pp-eyebrow {
   color: #8297ae; font-size: 10px; font-weight: 650; letter-spacing: 1.5px; text-transform: uppercase;
 }
-.pp-nav-label { margin: 0 0 9px; }
 .st-key-workspace_navigation [data-testid="stPageLink"] a {
   border-radius: 8px; min-height: 37px; transition: background .15s ease, color .15s ease;
 }
 .st-key-workspace_navigation [data-testid="stPageLink"] a:hover { background: rgba(53, 214, 180, .08); }
 .st-key-workspace_navigation [data-testid="stPageLink"] p { font-size: 13px; }
-.st-key-workspace_navigation summary p { color: #91a5bb; font-size: 11px; font-weight: 600; }
+.st-key-workspace_navigation summary {
+  padding: 0 8px; min-height: 37px; width: 100%; border-radius: 8px;
+}
+.st-key-workspace_navigation summary:hover { background: rgba(53, 214, 180, .08); }
+.st-key-workspace_navigation summary > span { display: flex; align-items: center; gap: 8px; width: 100%; }
+.st-key-workspace_navigation summary > span > span:last-child { margin-left: auto; }
+.st-key-workspace_navigation summary p { color: #bcc8d8; font-size: 13px; font-weight: 400; margin: 0; }
+.st-key-workspace_navigation [data-testid="stIconMaterial"],
+.st-key-workspace_navigation [data-testid="stExpanderIcon"] { font-size: 18px; line-height: 18px; }
 .st-key-workspace_navigation [data-testid="stExpander"],
 .st-key-workspace_navigation details { border: 0 !important; box-shadow: none !important; }
 .st-key-page_header { margin-bottom: .15rem; }
