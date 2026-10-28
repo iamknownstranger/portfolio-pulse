@@ -1,3 +1,4 @@
+from common.presentation import page_header
 import duckdb
 import pandas as pd
 import streamlit as st
@@ -8,8 +9,8 @@ from common.portfolio import analyze_portfolio, compare_with_benchmark
 from common.portfolio_ui import growth_chart, headline_metrics, load_portfolio, model_methodology
 from common.sidebar import portfolio_filters
 
-st.title("Index Insights")
-st.caption("Build an equal-weight price index and inspect the archived membership behind a market-cap universe.")
+page_header('Index Insights',
+            'Explore equal-weight performance and the historical universe behind it.', 'Equities / Indices')
 symbols, start, end, period, benchmark_symbol, benchmark_name = portfolio_filters()
 
 

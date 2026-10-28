@@ -17,6 +17,7 @@ The product's strongest existing component is Smart Money Radar: small thematic 
 | `common/portfolio.py` | UI-independent weights, price alignment, wealth, performance/risk metrics, attribution, and dollar rebalance math. |
 | `common/optimization.py` | Long-only constrained optimization, fresh-solver fallback, comparable allocation estimates, and frontier points. |
 | `common/portfolio_ui.py` | Consistent data-state handling, headline metrics, growth charts, and methodology explanations. |
+| `common/presentation.py`, `assets/workspace.css` | Shared workspace branding, page headers, context chips, chart template, and responsive visual styling. |
 | `common/indices.py` | Parameterized historical membership queries, archive boundaries, and composition changes. |
 | `common/smart_money.py`, `common/themes.py` | Thematic universe, accumulation signals, relative strength, scoring and lifecycle classification. |
 | `common/sec_edgar.py` | SEC fair-access requests, Form 4/13F parsing, issuer matching and position changes. |

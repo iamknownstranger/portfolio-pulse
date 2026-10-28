@@ -1,3 +1,4 @@
+from common.presentation import page_header
 import math
 
 import numpy as np
@@ -10,8 +11,8 @@ from common.portfolio import rebalance_plan
 from common.portfolio_ui import format_value, load_portfolio, model_methodology
 from common.sidebar import portfolio_settings, portfolio_filters
 
-st.title("Rebalancing & Optimization")
-st.caption("Turn your model allocation into a constrained target and an exportable dollar plan.")
+page_header('Rebalancing & Optimization',
+            'Turn your allocation into a constrained target and an illustrative dollar plan.', 'Equities / Allocation')
 symbols, start, end, *_ = portfolio_filters()
 portfolio = load_portfolio(symbols, start, end)
 rf = portfolio_settings()["risk_free_rate"]
@@ -51,7 +52,7 @@ cols[2].metric("Sell value", format_value(-plan["Trade value ($)"].clip(upper=0)
 trades, estimates = st.tabs(["Allocation & trade plan", "Risk / return estimates"])
 with trades:
     fig = go.Figure()
-    fig.add_bar(x=plan.index, y=plan["Current weight"] * 100, name="Current model")
+    fig.add_bar(x=plan.index, y=plan["Current weight"] * 100, name="Current model", marker_color="#8FA8F5")
     fig.add_bar(x=plan.index, y=plan["Target weight"] * 100, name="Target", marker_color="#35D6B4")
     fig.update_layout(barmode="group", yaxis_title="Allocation (%)", legend_orientation="h")
     st.plotly_chart(fig, width="stretch")

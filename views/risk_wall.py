@@ -1,3 +1,4 @@
+from common.presentation import page_header
 import numpy as np
 import plotly.express as px
 import streamlit as st
@@ -6,8 +7,8 @@ from common.portfolio import drawdowns
 from common.portfolio_ui import format_value, headline_metrics, load_portfolio, model_methodology
 from common.sidebar import portfolio_filters
 
-st.title("Risk Wall")
-st.caption("Understand the losses behind the return, and what another shock could mean.")
+page_header('Risk Wall',
+            'Understand the losses behind the return, and what another shock could mean.', 'Equities / Risk')
 symbols, start, end, *_ = portfolio_filters()
 portfolio = load_portfolio(symbols, start, end)
 stats = headline_metrics(portfolio)

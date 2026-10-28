@@ -1,3 +1,4 @@
+from common.presentation import page_header
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -7,8 +8,8 @@ from common.portfolio import normalized_weights
 from common.portfolio_ui import load_portfolio, model_methodology, model_weights
 from common.sidebar import portfolio_filters
 
-st.title("Holdings & Exposure")
-st.caption("Set explicit model allocations and see how concentrated they are.")
+page_header('Holdings & Exposure',
+            'Set your model weights and see how your portfolio is concentrated.', 'Equities / Holdings')
 symbols, start, end, *_ = portfolio_filters()
 weights = model_weights(symbols)
 st.subheader("Your model allocation")

@@ -1,3 +1,4 @@
+from common.presentation import page_header
 from datetime import date, timedelta
 
 import numpy as np
@@ -6,8 +7,8 @@ import streamlit as st
 
 from common.data import get_price_data
 
-st.title("🛢️ Commodities")
-st.caption("Front-month futures via Yahoo Finance.")
+page_header('Commodities',
+            'Front-month futures performance, volatility and cross-commodity relationships.', 'Markets / Commodities')
 
 COMMODITY_TICKERS = {
     "GC=F": "Gold",

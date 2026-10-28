@@ -1,3 +1,4 @@
+from common.presentation import page_header
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -11,26 +12,6 @@ from common.options import (
     process_nse_data,
     process_yfinance_data,
 )
-
-# --- CUSTOM STYLING ---
-st.markdown("""
-<style>
-    .success-message {
-        background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724;
-        padding: 0.75rem 1.25rem; border-radius: 0.25rem; margin-bottom: 1rem;
-    }
-    .warning-message {
-        background-color: #fff3cd; border: 1px solid #ffeeba; color: #856404;
-        padding: 0.75rem 1.25rem; border-radius: 0.25rem; margin-bottom: 1rem;
-    }
-    .metric-card {
-        background-color: #f8f9fa; padding: 1rem; border-radius: 0.5rem; text-align: center;
-    }
-    .stButton>button {
-        width: 100%;
-    }
-</style>
-""", unsafe_allow_html=True)
 
 # --- SESSION STATE INITIALIZATION ---
 if 'error_messages' not in st.session_state:
@@ -267,8 +248,8 @@ def find_strategic_options(df, current_price):
             st.write("No suitable puts found.")
 
 # --- MAIN APP LAYOUT ---
-st.title("🎯 Advanced Index Options Tool")
-st.markdown("*A data-driven dashboard for positional option traders based on the Max Pain theory.*")
+page_header("Option Chain", "Open interest, implied volatility and Greeks for index options.",
+            "Equities / Derivatives")
 
 header_cols = st.columns([2, 4, 1.2])
 selected_index = header_cols[0].selectbox("Select Index", list(INDEX_SYMBOLS.keys()))
