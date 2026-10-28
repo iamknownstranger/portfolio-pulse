@@ -34,6 +34,8 @@
 .st-key-workspace_navigation [data-testid="stPageLink"] p { font-size: 13px; }
 .st-key-workspace_navigation summary {
   padding: 0 8px; min-height: 37px; width: 100%; border-radius: 8px;
+  /* Compact expanders dim their entire header; navigation stays fully visible. */
+  opacity: 1;
 }
 .st-key-workspace_navigation summary:hover { background: rgba(53, 214, 180, .08); }
 .st-key-workspace_navigation summary > span { display: flex; align-items: center; gap: 8px; width: 100%; }
