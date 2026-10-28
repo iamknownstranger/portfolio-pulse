@@ -32,7 +32,7 @@ def workspace_brand():
     with st.container(key="workspace_brand"):
         st.html('''<div class="pp-brand" data-portfolio-ui="studio-20261028">
           <div class="pp-brand-mark" aria-hidden="true">PP</div>
-          <div><strong>Portfolio Pulse</strong><span>INVESTMENT WORKSPACE</span></div>
+          <div><strong>Portfolio Pulse</strong><span>PORTFOLIO INTELLIGENCE</span></div>
         </div>''')
 
 
