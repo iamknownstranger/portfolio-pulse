@@ -1,3 +1,4 @@
+from common.presentation import page_header
 from datetime import date, timedelta
 
 import pandas as pd
@@ -7,8 +8,8 @@ import streamlit as st
 
 from common.data import get_price_data
 
-st.title("🏦 Fixed Income — Rates & Macro")
-st.caption("US Treasury yields (CBOE indices via Yahoo Finance, quoted in %) and broad macro gauges.")
+page_header('Rates & Macro',
+            'US Treasury yields (%), the shape of the curve and broader macro gauges.', 'Markets / Fixed income')
 
 # Yahoo/CBOE yield indices and their maturities in years
 YIELD_TICKERS = {

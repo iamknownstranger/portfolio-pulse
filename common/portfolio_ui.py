@@ -7,6 +7,7 @@ import streamlit as st
 
 from common import data
 from common.portfolio import analyze_portfolio, normalized_weights
+from common.presentation import analysis_context
 from common.sidebar import portfolio_settings
 
 ACCENT = "#35D6B4"
@@ -38,11 +39,7 @@ def load_portfolio(symbols, start, end):
     except ValueError as exc:
         st.info(str(exc))
         st.stop()
-    st.caption(
-        f"{len(portfolio.weights)} assets · {portfolio.prices.index[0]:%d %b %Y} – "
-        f"{portfolio.prices.index[-1]:%d %b %Y} · {len(portfolio.returns):,} return observations · "
-        "Split/dividend-adjusted closes"
-    )
+    analysis_context(portfolio)
     if portfolio.excluded_rows:
         st.info(f"Using common price dates for every asset; {portfolio.excluded_rows} incomplete rows were excluded. "
                 "Returns span consecutive available common dates, which may be more than one trading day.")
@@ -53,7 +50,8 @@ def load_portfolio(symbols, start, end):
 
 def headline_metrics(portfolio):
     stats = portfolio.stats(portfolio_settings()["risk_free_rate"])
-    cols = st.columns(4)
+    with st.container(key="headline_metrics"):
+        cols = st.columns(4)
     for col, label, key, percent, help_text in [
         (cols[0], "Total return", "total_return", True, "Compounded model return over the available period."),
         (cols[1], "Annual volatility", "volatility", True, "Sample return volatility, annualized using 252 observations."),
@@ -67,13 +65,20 @@ def headline_metrics(portfolio):
 def growth_chart(series, title="Growth of $10,000", initial_value=10000):
     fig = go.Figure()
     colors = [ACCENT, "#8FA8DD", "#F3B76C"]
+    low = min(float(values.min()) for values in series.values()) * initial_value
+    high = max(float(values.max()) for values in series.values()) * initial_value
     for i, (name, values) in enumerate(series.items()):
         fig.add_trace(go.Scatter(x=values.index, y=values * initial_value, name=name,
-                                 mode="lines", line={"color": colors[i % len(colors)], "width": 2.5}))
-    fig.update_layout(title=title, height=410, xaxis_title=None, yaxis_title="Model value ($)",
-                      yaxis_tickprefix="$", hovermode="x unified", legend={"orientation": "h", "y": 1.12},
-                      margin={"l": 10, "r": 10, "t": 85, "b": 10})
-    st.plotly_chart(fig, width="stretch")
+                                 mode="lines", line={"color": colors[i % len(colors)], "width": 2.7 if i == 0 else 1.8,
+                                                      "dash": "solid" if i == 0 else "dot"},
+                                 fill="tozeroy" if i == 0 else None, fillcolor="rgba(53,214,180,0.055)",
+                                 hovertemplate="%{y:$,.0f}<extra>%{fullData.name}</extra>"))
+    padding = max((high - low) * .12, high * .02)
+    fig.update_layout(title=title, height=410, xaxis_title=None, yaxis_title=None,
+                      yaxis={"tickprefix": "$", "range": [max(0, low - padding), high + padding]},
+                      hovermode="x unified", legend={"orientation": "h", "y": 1.12, "x": 0},
+                      margin={"l": 15, "r": 20, "t": 90, "b": 25})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 def model_methodology():

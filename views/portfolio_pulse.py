@@ -1,5 +1,7 @@
 """The portfolio workspace: outcomes first, diagnostics and exports on demand."""
 
+from common.presentation import page_header
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -9,8 +11,8 @@ from common.portfolio import compare_with_benchmark
 from common.portfolio_ui import format_value, growth_chart, headline_metrics, load_portfolio, model_methodology
 from common.sidebar import portfolio_filters
 
-st.title("Portfolio Pulse")
-st.caption("A clear view of your portfolio. From performance to your next allocation decision.")
+page_header('Portfolio Pulse',
+            'Your allocation, performance and risk. One clear view of the bigger picture.', 'Equities / Overview')
 symbols, start, end, period, benchmark_symbol, benchmark_name = portfolio_filters()
 portfolio = load_portfolio(symbols, start, end)
 stats = headline_metrics(portfolio)
@@ -36,14 +38,15 @@ with performance:
     cols[1].metric("Annualized growth (CAGR)", format_value(stats["cagr"], True),
                    help="Geometric annualization of the observed period, not a forecast. Short windows can magnify this value.")
     cols[2].metric("Worst observed day", format_value(stats["worst_day"], True))
-    st.subheader("Explore your next decision")
-    for col, page, label, description in zip(st.columns(3),
+    st.subheader("Your next move")
+    for i, (col, page, label, description, icon) in enumerate(zip(st.columns(3),
             ["views/risk_wall.py", "views/rebalancing_optimization.py", "views/holdings_exposure.py"],
             ["Understand your risk", "Build a rebalance plan", "Set your allocations"],
             ["Drawdowns, loss estimates and stress scenarios.", "Compare constrained targets and export dollar trades.",
-             "Edit the model weights used across your dashboards."]):
-        with col.container(border=True):
-            st.page_link(page, label=label)
+             "Edit the model weights used across your dashboards."],
+            [":material/shield:", ":material/balance:", ":material/pie_chart:"])):
+        with col.container(border=True, key=f"next_action_{i}"):
+            st.page_link(page, label=label, icon=icon)
             st.caption(description)
 with assets:
     normalized = portfolio.prices.div(portfolio.prices.iloc[0]).mul(100)

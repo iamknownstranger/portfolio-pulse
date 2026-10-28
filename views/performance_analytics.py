@@ -1,3 +1,4 @@
+from common.presentation import page_header
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -8,8 +9,8 @@ from common.portfolio import compare_with_benchmark, performance_stats, relative
 from common.portfolio_ui import format_value, growth_chart, headline_metrics, load_portfolio, model_methodology
 from common.sidebar import portfolio_settings, portfolio_filters
 
-st.title("Performance Analytics")
-st.caption("Find what drove your returns and compare the model on a common benchmark calendar.")
+page_header('Performance Analytics',
+            'Find what drove your returns and compare your model with the market.', 'Equities / Performance')
 symbols, start, end, period, benchmark_symbol, benchmark_name = portfolio_filters()
 portfolio = load_portfolio(symbols, start, end)
 headline_metrics(portfolio)

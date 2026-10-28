@@ -1,3 +1,4 @@
+from common.presentation import page_header
 from datetime import date, timedelta
 
 import numpy as np
@@ -37,7 +38,8 @@ STAGE_COLORS = {
     "💤 Dormant": "#9E9E9E",
 }
 
-st.title("🧭 Smart Money Radar")
+page_header("Smart Money Radar", "Follow accumulation, thematic rotation and the evidence behind the move.",
+            "Research / Thematic flows")
 st.caption(
     "Ranks thematic baskets by evidence of **accumulation** rather than by trailing return, "
     "so a narrative can surface while it is still based. Price and volume signals are a "

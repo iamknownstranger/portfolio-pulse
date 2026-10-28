@@ -1,3 +1,4 @@
+from common.presentation import page_header
 from datetime import date, timedelta
 
 import numpy as np
@@ -7,9 +8,8 @@ import streamlit as st
 
 from common.data import get_price_data
 
-st.title("🪙 Crypto Metrics")
-st.caption("Spot prices via Yahoo Finance. Crypto trades 24/7, so risk metrics "
-           "are annualized over 365 days rather than the 252 used for equities.")
+page_header('Crypto Metrics',
+            'Digital-asset performance, risk and relative strength. Annualized over 365 days.', 'Markets / Digital assets')
 
 CRYPTO_TICKERS = {
     "BTC-USD": "Bitcoin",

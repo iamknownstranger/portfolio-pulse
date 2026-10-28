@@ -17,7 +17,7 @@ streamlit run streamlit_app.py
 
 ## Portfolio workflow
 
-1. Start with the deterministic AAPL, MSFT, GOOGL, AMZN and NVDA model, or paste up to 30 tickers into the sidebar.
+1. Start with the deterministic AAPL, MSFT, GOOGL, AMZN and NVDA model. Open **Portfolio settings** in the sidebar to paste up to 30 tickers or adjust the model's date range and benchmark.
 2. Select dates, a benchmark and an annual risk-free rate. Click **Update analysis** to apply the filters. They persist when switching portfolio pages.
 3. Use **Holdings & Exposure** to enter model weights totalling 100%, or reset to equal weights. The same model drives portfolio performance, risk and rebalancing.
 4. Review growth, drawdowns, return attribution, monthly performance and correlations.
@@ -40,6 +40,8 @@ The portfolio is a hypothetical fully invested model rebalanced to fixed weights
 The overview leads with total return, annual volatility, maximum drawdown and Sharpe. Tabs provide asset details, return correlations and exports. Portfolio analytics use a shared, UI-independent calculation engine; benchmark prices align before returns are calculated.
 
 Equities — Linear is the first sidebar section, expanded by default, and Portfolio Pulse is the landing page. Categories with a single dashboard remain direct links under the category name.
+
+The shared workspace theme includes a branded sidebar, consistent research headers, metric cards, compact tabs, and coordinated chart colors. On phones, the sidebar starts collapsed and portfolio KPIs use a two-column grid. Presentation lives in `common/presentation.py` and `assets/workspace.css`, separate from the calculation engine.
 
 ## Market data and assumptions
 
