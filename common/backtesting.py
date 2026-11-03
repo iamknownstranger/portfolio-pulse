@@ -12,9 +12,9 @@ import json
 import numpy as np
 import pandas as pd
 
-from common.portfolio import clean_prices, normalized_weights, performance_stats
+from common.portfolio import clean_prices, normalize_observation_dates, normalized_weights, performance_stats
 
-ENGINE_VERSION = "1.0"
+ENGINE_VERSION = "1.1"
 STRATEGIES = ("Buy & hold", "Periodic rebalance", "Trend filter", "Momentum rotation")
 FREQUENCIES = ("Daily", "Weekly", "Monthly", "Quarterly")
 LEDGER_COLUMNS = ["Signal date", "Execution date", "Asset", "Side", "Units", "Reference price",
@@ -112,8 +112,12 @@ def strategy_targets(prices, weights, config):
 
 def _funded_rebalance(marked, equity, target, cost_rate):
     """Solve post-cost equity + turnover fee = pre-trade equity (no borrowing)."""
+    full_value = target * equity
+    if np.all(np.abs(full_value - marked) <= 4 * np.spacing(equity)):
+        # Keep holdings when only floating-point roundoff separates them from target.
+        return marked.copy()
     if cost_rate == 0:
-        return target * equity
+        return full_value
     low, high = 0.0, equity
     for _ in range(48):
         net = (low + high) / 2
@@ -134,12 +138,17 @@ def simulate_targets(prices, targets, config, signals=None):
     """
     config.validate()
     prices, excluded = _prepared_prices(prices)
+    if not targets.columns.is_unique or set(targets.columns) != set(prices.columns):
+        raise ValueError("Targets must include exactly the price assets, without duplicates.")
+    targets = normalize_observation_dates(targets)
     targets = targets.reindex(index=prices.index, columns=prices.columns).astype(float)
     rows = targets.notna().any(axis=1)
     active = targets.loc[rows]
     if (active.isna().any().any() or not np.isfinite(active).all().all()
             or (active < 0).any().any() or (active.sum(axis=1) > 1 + 1e-10).any()):
         raise ValueError("Targets must be complete, non-negative and sum to at most 100%.")
+    # A tolerated floating-point overshoot must not create equity or borrowed cash.
+    targets.loc[rows] = active.div(active.sum(axis=1).clip(lower=1.0), axis=0)
     units = np.zeros(len(prices.columns))
     cash = config.initial_capital
     equity_values, allocations, ledger, costs = [], [], [], []
@@ -156,8 +165,8 @@ def simulate_targets(prices, targets, config, signals=None):
         if i and np.isfinite(target_values[i - 1]).all():
             desired = _funded_rebalance(marked, equity, target_values[i - 1], total_rate)
             trades = desired - marked
-            # Retain all economically meaningful fills, including costs on buys and sells.
-            for j in np.flatnonzero(np.abs(trades) > max(1e-9, equity * 1e-12)):
+            # Every holding change and fee must be reconstructible from the ledger.
+            for j in np.flatnonzero(trades):
                 notional = abs(float(trades[j]))
                 fee = notional * config.commission_bps / 10000
                 slip = notional * config.slippage_bps / 10000
@@ -219,7 +228,7 @@ def rolling_windows(equity, risk_free_rate=0.0, window=63):
     rows = []
     for start in range(0, len(equity) - 1, window):
         path = equity.iloc[start:start + window + 1]
-        if len(path) < 3:
+        if len(path) < 2:
             continue
         stats = performance_stats(path.pct_change(fill_method=None).iloc[1:], risk_free_rate, start=path.index[0])
         rows.append({"Start": path.index[0], "End": path.index[-1], "Observations": len(path) - 1,

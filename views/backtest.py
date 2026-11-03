@@ -10,7 +10,7 @@ import streamlit as st
 
 from common.data import get_benchmark_data
 from common.backtesting import (BacktestConfig, FREQUENCIES, STRATEGIES, run_backtest, run_manifest)
-from common.portfolio import compare_with_benchmark, drawdowns
+from common.portfolio import clean_prices, compare_with_benchmark, drawdowns
 from common.portfolio_ui import format_value, growth_chart, load_portfolio
 from common.presentation import page_header
 from common.research_ui import render_drawdown_episodes, render_signal_research, render_validation
@@ -31,10 +31,13 @@ valid_candidate = candidate and set(candidate["weights"]) == set(symbols)
 sources = ["Current model"] + (["Optimizer target"] if valid_candidate else [])
 requested = st.session_state.pop("backtest_requested_source", None)
 if requested in sources:
-    st.session_state["_bt_source"] = requested
-if st.session_state.get("_bt_source") not in sources:
-    st.session_state["_bt_source"] = sources[0]
+    st.session_state["backtest_source"] = requested
+if st.session_state.get("backtest_source") not in sources:
+    st.session_state["backtest_source"] = sources[0]
+if requested in sources or st.session_state.get("_bt_source") not in sources:
+    st.session_state["_bt_source"] = st.session_state["backtest_source"]
 source = st.selectbox("Allocation source", sources, key="_bt_source")
+st.session_state["backtest_source"] = source
 weights = pd.Series(candidate["weights"]).reindex(symbols) if source == "Optimizer target" else portfolio.weights
 if source == "Optimizer target":
     st.info(f"Testing the copied {candidate['label']} target, estimated over "
@@ -59,6 +62,8 @@ with st.expander("Strategy & execution settings", expanded=False):
                    "your source weights. Trend applies those weights only above each asset's trailing moving average, "
                    "rebalanced daily; inactive sleeves stay in cash. Momentum equally weights up to N positive trailing-return "
                    "leaders at the selected frequency. Buy & hold enters once. Trend ignores the frequency; only trend and momentum use the lookback.")
+        st.caption("Momentum uses the entire selected ticker universe, including zero-weight tickers, and invests 100% "
+                   "among qualifying names. It ignores source allocation weights; when no ticker qualifies, it holds cash.")
         submitted = st.form_submit_button("Run backtest", type="primary", width="stretch")
 
 config = BacktestConfig(strategy, frequency, int(lookback), int(top_n), capital, commission, slippage, cash_rate / 100)
@@ -67,6 +72,7 @@ benchmark_prices = None
 benchmark = get_benchmark_data(benchmark_symbol, start, end)
 if not benchmark.empty:
     try:
+        benchmark = clean_prices(benchmark.rename("Benchmark").to_frame()).iloc[:, 0]
         aligned, _, _ = compare_with_benchmark(prices, benchmark, weights)
         prices = aligned.prices
         benchmark_prices = benchmark.reindex(prices.index).to_frame("Benchmark")
@@ -132,13 +138,15 @@ with outcome:
     cols[0].metric("Final model value", format_value(stats["final_value"], dollars=True))
     cols[1].metric("Commissions + slippage", format_value(stats["total_cost"], dollars=True))
     cols[2].metric("Asset executions", f"{stats['executions']:,}", help="One buy or sell in one asset, not a closed round-trip trade.")
-    cols[3].metric("Average invested allocation", format_value(stats["average_exposure"], True))
+    cols[3].metric("Average invested allocation", format_value(stats["average_exposure"], True),
+                   help="Arithmetic mean of invested allocations at observed closes, including initial cash. Not weighted by elapsed calendar time.")
     st.caption(f"Zero-cost versus net terminal-value difference: {format_value(gross.equity.iloc[-1] - result.equity.iloc[-1], dollars=True)}. "
                "This includes the compounding effect of costs; it differs from the cash fees paid.")
     if reference is not None:
         difference = (result.equity.iloc[-1] - reference.equity.iloc[-1]) / result.config.initial_capital * 100
-        st.caption(f"Return difference versus benchmark: {difference:+.2f} percentage points. Benchmark enters at the same "
-                   "next common close, pays the same one-time entry costs and holds. Index benchmarks exclude reinvested dividends.")
+        st.caption(f"Return difference versus benchmark: {difference:+.2f} percentage points. Benchmark decides at the first "
+                   "common close and enters at the second, independently of strategy warm-up. It pays the same per-side "
+                   "entry cost rates and holds. Index benchmarks exclude reinvested dividends.")
     fig = px.area(x=result.equity.index, y=drawdowns(result.equity / result.equity.iloc[0]),
                   labels={"x": "Date", "y": "Drawdown"}, color_discrete_sequence=["#F38F9D"])
     fig.update_layout(yaxis_tickformat=".1%", height=280, title="Losses from the running peak")
@@ -176,7 +184,9 @@ with saved:
         else:
             collection[manifest["run_id"]] = {"name": run_name.strip() or result.config.strategy,
                 "equity": result.equity.copy(), "stats": stats, "manifest": manifest,
-                "ledger": result.ledger.copy()}
+                "ledger": result.ledger.copy(), "prices": active["prices"].copy(),
+                "equity_export": pd.concat([result.equity, gross.equity.rename("Zero costs"),
+                                             result.costs], axis=1).copy()}
             st.session_state["backtest_saved"] = collection
             st.success("Run saved for this session.")
     collection = st.session_state.get("backtest_saved", {})
@@ -196,6 +206,16 @@ with saved:
                    "Different windows are shown on their original dates and are not ranked.")
         st.download_button("Download saved run recipes", json.dumps([run["manifest"] for run in collection.values()], indent=2),
                            "saved_backtest_recipes.json", "application/json", on_click="ignore")
+        export_id = st.selectbox("Saved run to export", list(collection),
+            format_func=lambda run_id: f"{collection[run_id]['name']} · {run_id}", key="_bt_export_saved")
+        export_run = collection[export_id]
+        cols = st.columns(3)
+        cols[0].download_button("Download saved input prices", export_run["prices"].to_csv(index_label="Date").encode(),
+            f"backtest_{export_id}_prices.csv", "text/csv", on_click="ignore")
+        cols[1].download_button("Download saved equity & costs", export_run["equity_export"].to_csv(index_label="Date").encode(),
+            f"backtest_{export_id}_equity.csv", "text/csv", on_click="ignore")
+        cols[2].download_button("Download saved executions", export_run["ledger"].to_csv(index=False).encode(),
+            f"backtest_{export_id}_executions.csv", "text/csv", on_click="ignore")
         if st.button("Clear saved comparison"):
             st.session_state.pop("backtest_saved", None)
             st.rerun()

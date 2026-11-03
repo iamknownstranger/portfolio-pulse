@@ -200,3 +200,152 @@ def test_optimizer_walk_forward_renders_folds_and_excludes_training_window(marke
     assert validation.result.equity.index[0] == market.index[126]
     assert len(validation.folds) == 3
     assert any(m.label == 'Forward net return' for m in app.metric)
+
+
+def test_optimizer_source_and_run_persist_when_navigating_away_and_back(market):
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    weights = dict(zip(DEFAULT_SYMBOLS, [.4, .3, .2, .1, 0.]))
+    app.session_state['backtest_candidate'] = {'weights': weights, 'label': 'Minimum volatility',
+        'estimated_start': market.index[0].date().isoformat(), 'estimated_end': market.index[-1].date().isoformat()}
+    app.session_state['backtest_requested_source'] = 'Optimizer target'
+    navigate(app, 'backtest')
+    assert not app.exception
+    previous = app.session_state['backtest_active']['manifest']
+    navigate(app, 'performance')
+    navigate(app, 'backtest')
+    assert not app.exception
+    assert app.selectbox(key='_bt_source').value == 'Optimizer target'
+    assert app.session_state['backtest_active']['manifest'] == previous
+    assert app.session_state['backtest_active']['manifest']['weights'] == weights
+
+
+def test_backtest_normalizes_benchmark_dates_before_reference_simulation(market, monkeypatch):
+    benchmark = market.mean(axis=1)
+    benchmark.index = benchmark.index.tz_localize('UTC') + pd.Timedelta(hours=16)
+    monkeypatch.setattr(data, 'get_benchmark_data', lambda *a: benchmark)
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    navigate(app, 'backtest')
+    assert not app.exception
+    assert not app.error
+    active = app.session_state['backtest_active']
+    assert active['reference'] is not None
+    assert active['reference'].equity.index.equals(active['result'].equity.index)
+
+
+def test_saved_run_inputs_and_outputs_survive_provider_revisions(market, monkeypatch):
+    import hashlib
+    from pandas.testing import assert_frame_equal, assert_series_equal
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    navigate(app, 'backtest')
+    next(b for b in app.button if b.label == 'Save run to session').click().run()
+    original_id = app.session_state['backtest_active']['manifest']['run_id']
+    original = app.session_state['backtest_saved'][original_id]
+    old_prices, old_equity = original['prices'].copy(), original['equity'].copy()
+    revised = market.copy()
+    revised.iloc[-10:] *= 1.1
+    monkeypatch.setattr(data, 'get_price_data', lambda symbols, *a, **k: revised.reindex(columns=symbols))
+    app.run()
+    assert not app.exception
+    assert app.session_state['backtest_active']['manifest']['run_id'] != original_id
+    stored = app.session_state['backtest_saved'][original_id]
+    assert_frame_equal(stored['prices'], old_prices)
+    assert_series_equal(stored['equity'], old_equity)
+    exported = stored['prices'].to_csv(index_label='Date').encode()
+    assert hashlib.sha256(exported).hexdigest() == stored['manifest']['price_sha256']
+    assert list(app.selectbox(key='_bt_export_saved').options)
+    assert stored['equity_export']['Strategy'].equals(old_equity)
+
+
+def test_saved_run_limit_allows_replacing_same_id_and_clear_resets_collection(market):
+    import copy
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    navigate(app, 'backtest')
+    next(b for b in app.button if b.label == 'Save run to session').click().run()
+    run_id = app.session_state['backtest_active']['manifest']['run_id']
+    saved = app.session_state['backtest_saved'][run_id]
+    # Seed four additional complete snapshots; exercise the limit without five unrelated simulations.
+    collection = {run_id: saved, **{f'prior-{i}': copy.deepcopy(saved) for i in range(4)}}
+    app.session_state['backtest_saved'] = collection
+    next(b for b in app.button if b.label == 'Save run to session').click().run()
+    assert not app.exception
+    assert len(app.session_state['backtest_saved']) == 5
+    app.selectbox(key='_bt_strategy').select('Buy & hold')
+    app.button(key='FormSubmitter:backtest_form-Run backtest').click().run()
+    next(b for b in app.button if b.label == 'Save run to session').click().run()
+    assert any('Five runs are already saved' in warning.value for warning in app.warning)
+    assert len(app.session_state['backtest_saved']) == 5
+    next(b for b in app.button if b.label == 'Clear saved comparison').click().run()
+    assert not app.exception
+    assert 'backtest_saved' not in app.session_state
+
+
+def test_benchmark_enters_second_common_close_while_trend_is_still_warming_up(market):
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    navigate(app, 'backtest')
+    app.selectbox(key='_bt_strategy').select('Trend filter')
+    app.number_input(key='_bt_lookback').set_value(63)
+    app.button(key='FormSubmitter:backtest_form-Run backtest').click().run()
+    assert not app.exception
+    active = app.session_state['backtest_active']
+    assert active['reference'].ledger.iloc[0]['Execution date'] == market.index[1]
+    assert (active['result'].allocations.iloc[:63]['Cash'] == 1.).all()
+
+
+def test_changing_universe_invalidates_optimizer_candidate_and_clamps_momentum_holdings(market):
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    app.session_state['backtest_candidate'] = {'weights': dict.fromkeys(DEFAULT_SYMBOLS, .2),
+                                              'label': 'Equal weight'}
+    app.session_state['backtest_requested_source'] = 'Optimizer target'
+    navigate(app, 'backtest')
+    app.text_area(key='_pf_symbols').input('AAPL')
+    app.button(key='FormSubmitter:portfolio_form-Update analysis').click().run()
+    assert not app.exception
+    assert app.selectbox(key='_bt_source').value == 'Current model'
+    assert app.number_input(key='_bt_top_n').value == 1
+    assert app.session_state['backtest_active']['manifest']['weights'] == {'AAPL': 1.}
+
+
+def test_invalid_benchmark_dates_fall_back_to_available_strategy_history(market, monkeypatch):
+    benchmark = market.mean(axis=1)
+    benchmark.index = pd.DatetimeIndex([*benchmark.index[:-1], pd.NaT])
+    monkeypatch.setattr(data, 'get_benchmark_data', lambda *a: benchmark)
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    navigate(app, 'backtest')
+    assert not app.exception and not app.error
+    assert app.session_state['backtest_active']['reference'] is None
+    assert any('overlapping benchmark history' in info.value for info in app.info)
+
+
+def test_nonoverlapping_benchmark_does_not_block_strategy(market, monkeypatch):
+    benchmark = market.mean(axis=1)
+    benchmark.index = benchmark.index - pd.DateOffset(years=5)
+    monkeypatch.setattr(data, 'get_benchmark_data', lambda *a: benchmark)
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    navigate(app, 'backtest')
+    assert not app.exception and not app.error
+    assert app.session_state['backtest_active']['reference'] is None
+    assert app.session_state['backtest_active']['result'].equity.index.equals(market.index)
+
+
+def test_sparse_benchmark_preserves_common_baseline_and_discloses_removed_dates(market, monkeypatch):
+    benchmark = market.mean(axis=1).iloc[::3]
+    monkeypatch.setattr(data, 'get_benchmark_data', lambda *a: benchmark)
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    navigate(app, 'backtest')
+    assert not app.exception and not app.error
+    active = app.session_state['backtest_active']
+    assert active['result'].equity.index.equals(benchmark.index)
+    assert active['reference'].equity.index.equals(benchmark.index)
+    assert active['result'].equity.iloc[0] == active['reference'].equity.iloc[0] == 10000.
+    assert any('Benchmark alignment excluded' in info.value for info in app.info)
+
+
+def test_walk_forward_output_is_hidden_when_objective_or_cost_assumption_changes(market):
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    navigate(app, 'rebalancing')
+    next(b for b in app.button if b.label == 'Run walk-forward validation').click().run()
+    assert any(metric.label == 'Forward net return' for metric in app.metric)
+    app.number_input(key='rebalance_cost_bps').set_value(25.).run()
+    assert not app.exception
+    assert not any(metric.label == 'Forward net return' for metric in app.metric)
+    assert any('Run validation to evaluate' in info.value for info in app.info)

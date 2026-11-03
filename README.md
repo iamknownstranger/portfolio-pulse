@@ -83,3 +83,5 @@ Keep the Starlette compatibility pin in `requirements.txt`: Streamlit 1.58's gzi
 See [the product and architecture review](docs/PRODUCT_REVIEW.md) for the codebase map, corrected behaviors, model contract and prioritized next improvements.
 
 See [Backtest research and methodology](docs/BACKTEST_RESEARCH.md) for the Backtest.ai analysis, feature placement, execution timing, validation contracts, exported-run provenance and remaining data limitations. Backtesting uses daily adjusted stock/ETF closes; current options-chain snapshots do not provide historical options fills. Signal diagnostics and selected-universe simulations do not remove survivorship or research-selection bias.
+
+The [EGM review and test record](docs/reviews/backtest-egm/REVIEW_REPORT.md) traces fresh-context findings to regression tests and repairs, with final browser/export and startup evidence.
