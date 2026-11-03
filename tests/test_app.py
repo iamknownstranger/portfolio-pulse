@@ -363,6 +363,17 @@ def cached_portfolio_before_date_export(monkeypatch):
     cached = ModuleType('common.portfolio')
     cached.__dict__.update(portfolio_module.__dict__)
     cached.__dict__.pop('normalize_observation_dates', None)
+
+    def legacy_clean_prices(prices):
+        # Pre-update cleaning accepted a NaT label. Model its behavior as well
+        # as its public exports so the backtester must use the new validator.
+        frame = prices.copy()
+        frame.index = pd.to_datetime(frame.index, utc=True).tz_convert(None).normalize()
+        frame = frame.loc[~frame.index.duplicated(keep='last')].sort_index()
+        frame = frame.apply(pd.to_numeric, errors='coerce')
+        return frame.where(np.isfinite(frame) & (frame > 0))
+
+    cached.clean_prices = legacy_clean_prices
     # Python can retain this namespace when updated page source first imports
     # backtesting. Preserve existing imports and restore them after each case.
     monkeypatch.setitem(sys.modules, 'common.portfolio', cached)
@@ -383,6 +394,7 @@ def test_backtesting_imports_with_pre_update_portfolio_still_cached(cached_portf
     assert result.equity.iloc[-1] == pytest.approx(12100.)
     invalid = prices.copy()
     invalid.index = pd.to_datetime(['2024-01-01', '2024-01-02', '2024-01-03', None])
+    assert cached_portfolio_before_date_export.clean_prices(invalid).index.hasnans
     with pytest.raises(ValueError, match='date'):
         backtesting.run_backtest(invalid)
 
