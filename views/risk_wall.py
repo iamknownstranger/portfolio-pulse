@@ -6,6 +6,7 @@ import streamlit as st
 from common.portfolio import drawdowns
 from common.portfolio_ui import format_value, headline_metrics, load_portfolio, model_methodology
 from common.sidebar import portfolio_filters
+from common.research_ui import render_drawdown_episodes
 
 page_header('Risk Wall',
             'Understand the losses behind the return, and what another shock could mean.', 'Equities / Risk')
@@ -29,6 +30,7 @@ with losses:
     fig = px.area(x=dd.index, y=dd, labels={"x": "Date", "y": "Drawdown (%)"},
                   title="Distance from the running peak", color_discrete_sequence=["#F58C93"])
     st.plotly_chart(fig, width="stretch")
+    render_drawdown_episodes(portfolio.wealth, "risk")
     st.subheader("Stress your model value")
     value = st.number_input("Illustrative portfolio value ($)", min_value=1.0, value=10000.0, step=1000.0)
     cols = st.columns(3)

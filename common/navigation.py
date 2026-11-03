@@ -17,6 +17,7 @@ PAGE_SECTIONS = {
         ("views/index_insights.py", "Index Insights", ":material/query_stats:", "index-insights"),
         ("views/risk_wall.py", "Risk Wall", ":material/shield:", "risk-wall"),
         ("views/performance_analytics.py", "Performance Analytics", ":material/monitoring:", "performance"),
+        ("views/backtest.py", "Backtest", ":material/science:", "backtest"),
         ("views/rebalancing_optimization.py", "Rebalancing & Optimization", ":material/balance:", "rebalancing"),
         ("views/holdings_exposure.py", "Holdings & Exposure", ":material/pie_chart:", "holdings"),
     ],

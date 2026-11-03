@@ -39,6 +39,9 @@ with performance:
                    help="Geometric annualization of the observed period, not a forecast. Short windows can magnify this value.")
     cols[2].metric("Worst observed day", format_value(stats["worst_day"], True))
     st.subheader("Your next move")
+    with st.container(border=True):
+        st.page_link("views/backtest.py", label="Put your allocation to the test", icon=":material/science:")
+        st.caption("Compare buy & hold, periodic rebalancing, trend and momentum after trading costs. Inspect the execution ledger and later-window stability.")
     for i, (col, page, label, description, icon) in enumerate(zip(st.columns(3),
             ["views/risk_wall.py", "views/rebalancing_optimization.py", "views/holdings_exposure.py"],
             ["Understand your risk", "Build a rebalance plan", "Set your allocations"],

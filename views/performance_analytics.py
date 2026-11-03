@@ -8,6 +8,7 @@ from common.data import get_benchmark_data
 from common.portfolio import compare_with_benchmark, performance_stats, relative_stats
 from common.portfolio_ui import format_value, growth_chart, headline_metrics, load_portfolio, model_methodology
 from common.sidebar import portfolio_settings, portfolio_filters
+from common.research_ui import render_signal_research
 
 page_header('Performance Analytics',
             'Find what drove your returns and compare your model with the market.', 'Equities / Performance')
@@ -16,7 +17,7 @@ portfolio = load_portfolio(symbols, start, end)
 headline_metrics(portfolio)
 rf = portfolio_settings()["risk_free_rate"]
 
-comparison, contributions, monthly = st.tabs(["Benchmark comparison", "Return attribution", "Monthly returns"])
+comparison, contributions, monthly, signals = st.tabs(["Benchmark comparison", "Return attribution", "Monthly returns", "Signal research"])
 with comparison:
     benchmark = get_benchmark_data(benchmark_symbol, start, end)
     if benchmark.empty:
@@ -71,4 +72,7 @@ with monthly:
                         aspect="auto", labels={"color": "Return (%)"})
         st.plotly_chart(fig, width="stretch")
         st.caption("The first and last month may contain only part of a month. Missing months have no return observations.")
+with signals:
+    render_signal_research(portfolio.prices, "performance_signal")
+    st.page_link("views/backtest.py", label="Test an allocation or signal rule", icon=":material/science:")
 model_methodology()

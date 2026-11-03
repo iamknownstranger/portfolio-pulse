@@ -250,6 +250,10 @@ def find_strategic_options(df, current_price):
 # --- MAIN APP LAYOUT ---
 page_header("Option Chain", "Open interest, implied volatility and Greeks for index options.",
             "Equities / Derivatives")
+with st.expander("From a chain snapshot to a testable strategy"):
+    st.write("These chains describe currently available contracts. Historical options research needs dated quotes, "
+             "contract histories, spreads and settlement rules. A current chain cannot establish historical fills.")
+    st.page_link("views/backtest.py", label="Research stock & ETF allocation rules", icon=":material/science:")
 
 header_cols = st.columns([2, 4, 1.2])
 selected_index = header_cols[0].selectbox("Select Index", list(INDEX_SYMBOLS.keys()))

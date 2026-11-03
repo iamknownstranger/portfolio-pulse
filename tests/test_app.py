@@ -38,6 +38,7 @@ def navigate(app, route):
 @pytest.mark.parametrize('route,title', [
     ('portfolio', 'Portfolio Pulse'), ('risk-wall', 'Risk Wall'), ('performance', 'Performance Analytics'),
     ('rebalancing', 'Rebalancing & Optimization'), ('holdings', 'Holdings & Exposure'), ('index-insights', 'Index Insights'),
+    ('backtest', 'Backtest'),
 ])
 def test_equity_routes_render_without_exceptions(market, route, title):
     app = AppTest.from_file('streamlit_app.py', default_timeout=20)
@@ -126,3 +127,76 @@ def test_yahoo_option_fallback_keeps_expiry_metadata_and_renders(market, monkeyp
     navigate(app, 'option-chain')
     assert not app.exception
     assert any('fallback' in str(m.value).lower() for m in app.markdown)
+
+
+def test_backtest_settings_save_and_navigation_preserve_run(market):
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    navigate(app, 'backtest')
+    assert not app.exception
+    initial = app.session_state['backtest_active']['manifest']['run_id']
+    app.selectbox(key='_bt_strategy').select('Trend filter')
+    app.number_input(key='_bt_lookback').set_value(21)
+    app.button(key='FormSubmitter:backtest_form-Run backtest').click().run()
+    assert not app.exception
+    active = app.session_state['backtest_active']
+    assert active['result'].config.strategy == 'Trend filter'
+    assert active['manifest']['run_id'] != initial
+    next(b for b in app.button if b.label == 'Save run to session').click().run()
+    assert not app.exception
+    assert len(app.session_state['backtest_saved']) == 1
+    run_id = app.session_state['backtest_active']['manifest']['run_id']
+    navigate(app, 'performance')
+    navigate(app, 'backtest')
+    assert not app.exception
+    assert app.session_state['backtest_active']['manifest']['run_id'] == run_id
+    assert app.selectbox(key='_bt_strategy').value == 'Trend filter'
+
+
+def test_optimizer_target_handoff_copies_weights_without_changing_model(market):
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    navigate(app, 'rebalancing')
+    next(b for b in app.button if b.label == 'Backtest this target').click().run()
+    assert not app.exception
+    assert app.title[0].value == 'Backtest'
+    assert app.selectbox(key='_bt_source').value == 'Optimizer target'
+    weights = app.session_state['backtest_candidate']['weights']
+    assert app.session_state['backtest_active']['manifest']['weights'] == weights
+    assert app.session_state['backtest_active']['manifest']['context']['source_estimation_end'] == market.index[-1].date().isoformat()
+    assert 'portfolio_weights' not in app.session_state
+    assert any('in-sample' in i.value for i in app.info)
+
+
+def test_backtest_handles_missing_benchmark_and_short_signal_history(market, monkeypatch):
+    monkeypatch.setattr(data, 'get_benchmark_data', lambda *a: pd.Series(dtype=float))
+    monkeypatch.setattr(data, 'get_price_data', lambda *a, **k: market.iloc[:12])
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    navigate(app, 'backtest')
+    assert not app.exception
+    assert app.session_state['backtest_active']['reference'] is None
+    assert any('Benchmark prices are unavailable' in i.value for i in app.info)
+    assert any('21 price observations' in i.value for i in app.info)
+    assert any('20 complete signal' in i.value for i in app.info)
+
+
+def test_changing_portfolio_refreshes_backtest_but_keeps_saved_snapshot(market):
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    navigate(app, 'backtest')
+    next(b for b in app.button if b.label == 'Save run to session').click().run()
+    previous = app.session_state['backtest_active']['manifest']['run_id']
+    app.text_area(key='_pf_symbols').input('AAPL MSFT')
+    app.button(key='FormSubmitter:portfolio_form-Update analysis').click().run()
+    assert not app.exception
+    assert app.session_state['backtest_active']['manifest']['run_id'] != previous
+    assert set(app.session_state['backtest_active']['manifest']['weights']) == {'AAPL', 'MSFT'}
+    assert previous in app.session_state['backtest_saved']
+
+
+def test_optimizer_walk_forward_renders_folds_and_excludes_training_window(market):
+    app = AppTest.from_file('streamlit_app.py', default_timeout=30)
+    navigate(app, 'rebalancing')
+    next(b for b in app.button if b.label == 'Run walk-forward validation').click().run()
+    assert not app.exception
+    validation = app.session_state['walkforward_active']['validation']
+    assert validation.result.equity.index[0] == market.index[126]
+    assert len(validation.folds) == 3
+    assert any(m.label == 'Forward net return' for m in app.metric)

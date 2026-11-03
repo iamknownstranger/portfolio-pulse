@@ -25,7 +25,7 @@ class Optimization:
         return mean, vol, (mean - risk_free_rate) / vol if vol > 1e-12 else np.nan
 
 
-def optimize_allocation(prices, method="Maximum Sharpe", max_weight=1.0, risk_free_rate=0.0):
+def optimize_allocation(prices, method="Maximum Sharpe", max_weight=1.0, risk_free_rate=0.0, include_frontier=True):
     if len(prices) < 20:
         raise ValueError("Optimization needs at least 20 common price observations. Extend the date range.")
     n = len(prices.columns)
@@ -65,7 +65,7 @@ def optimize_allocation(prices, method="Maximum Sharpe", max_weight=1.0, risk_fr
         weights = pd.Series(ef.weights, index=mu.index).clip(lower=0)
         weights /= weights.sum()
     points = []
-    if n > 1 and n * max_weight > 1 + 1e-6:
+    if include_frontier and n > 1 and n * max_weight > 1 + 1e-6:
         minimum = engine()
         try:
             minimum.min_volatility()

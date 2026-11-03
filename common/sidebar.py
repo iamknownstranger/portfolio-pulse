@@ -77,7 +77,7 @@ def render_sidebar():
     st.sidebar.caption("Allocation: custom model" if custom else "Allocation: equal weight")
     st.sidebar.page_link("views/holdings_exposure.py", label="Edit allocations", icon=":material/tune:")
     st.sidebar.divider()
-    st.sidebar.caption("Historical models · Daily rebalancing\n\nBuilt by Chandra Sekhar Mullu")
+    st.sidebar.caption("Portfolio analytics: daily rebalancing\n\nBacktest: selected strategy and costs\n\nBuilt by Chandra Sekhar Mullu")
     return portfolio_filters()
 
 
