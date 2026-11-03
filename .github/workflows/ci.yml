@@ -8,12 +8,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    name: ${{ matrix.check_name }}
+    strategy:
+      matrix:
+        include:
+          - python-version: "3.11"
+            check_name: test
+          - python-version: "3.13"
+            check_name: test-python313
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install dependencies
@@ -49,7 +57,7 @@ jobs:
         run: /tmp/venv/bin/python -m py_compile 1_💼_Portfolio_Pulse.py streamlit_app.py common/*.py views/*.py
 
       - name: Import entrypoint dependencies
-        run: /tmp/venv/bin/python -c "import streamlit, pandas, numpy, plotly, duckdb, polars, yfinance, pypfopt, scipy"
+        run: /tmp/venv/bin/python -c "import streamlit, pandas, numpy, plotly, duckdb, polars, yfinance, pypfopt, scipy, common.backtesting, common.price_history"
 
       - name: Verify HTTP health and browser assets
         run: /tmp/venv/bin/python scripts/check_streamlit_startup.py

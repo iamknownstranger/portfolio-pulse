@@ -12,7 +12,8 @@ import json
 import numpy as np
 import pandas as pd
 
-from common.portfolio import clean_prices, normalize_observation_dates, normalized_weights, performance_stats
+from common.portfolio import normalized_weights, performance_stats
+from common.price_history import clean_prices, normalize_observation_dates
 
 ENGINE_VERSION = "1.1"
 STRATEGIES = ("Buy & hold", "Periodic rebalance", "Trend filter", "Momentum rotation")
