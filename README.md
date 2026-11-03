@@ -23,14 +23,17 @@ streamlit run streamlit_app.py
 4. Review growth, drawdowns, return attribution, monthly performance and correlations.
 5. In **Rebalancing & Optimization**, choose maximum Sharpe, minimum volatility or equal weight, set a per-asset cap, and export an illustrative dollar rebalance plan.
 6. Download adjusted prices, returns, model growth, allocation or attribution CSVs. Use **Refresh market data** to reload cached prices.
+7. Open **Backtest** to compare buy & hold, periodic rebalance, trend-filter and momentum-rotation rules with delayed execution, commissions, slippage and cash. Inspect the benchmark, ledger, signal evidence and chronological stability; save up to five runs in the session or export their recipes and prices.
 
-The portfolio is a hypothetical fully invested model rebalanced to fixed weights at every observed common close. It excludes costs, taxes and cash flows. Custom weights are not imported brokerage positions, and no trades are executed. Settings persist within the current session.
+The portfolio analytics are a hypothetical fully invested model rebalanced to fixed weights at every observed common close. They exclude costs, taxes and cash flows. **Backtest** has its own execution contract: decisions execute at the next common close, holdings drift between rebalances, costs are self-funded and unused capital stays in cash. Custom weights are not imported brokerage positions, and no trades are executed. Settings persist within the current session.
+
+In **Rebalancing & Optimization**, **Backtest this target** copies a proposed allocation for a cost-aware retrospective test; those fitted weights remain in-sample. **Forward validation** instead re-estimates the allocation on trailing prices for each fold and evaluates it on later observations, alongside equal weight on the same execution schedule. Performance Analytics adds single-asset signal history, distribution, forward-return scatter and deciles. Risk Wall adds dated drawdown and recovery episodes.
 
 ## Dashboards
 
 | Group | Tools |
 | --- | --- |
-| Equities — Linear | Portfolio Pulse, Index Insights, Risk Wall, Performance Analytics, Rebalancing & Optimization, Holdings & Exposure |
+| Equities — Linear | Portfolio Pulse, Index Insights, Risk Wall, Performance Analytics, Backtest, Rebalancing & Optimization, Holdings & Exposure |
 | Equities — Non-Linear | NSE index option chains, Yahoo fallback, Greeks, Max Pain, open-interest and implied-volatility charts |
 | Fixed Income | Treasury yield curve, slope/inversion, DXY and VIX gauges |
 | Commodities | Futures performance, rolling volatility and return correlations |
@@ -78,3 +81,7 @@ Tests include portfolio math, optimizer constraints, provider adapters, archived
 Keep the Starlette compatibility pin in `requirements.txt`: Streamlit 1.58's gzip middleware is incompatible with Starlette 1.x. An import check or healthy server response alone does not catch its static-file HTTP 500 error.
 
 See [the product and architecture review](docs/PRODUCT_REVIEW.md) for the codebase map, corrected behaviors, model contract and prioritized next improvements.
+
+See [Backtest research and methodology](docs/BACKTEST_RESEARCH.md) for the Backtest.ai analysis, feature placement, execution timing, validation contracts, exported-run provenance and remaining data limitations. Backtesting uses daily adjusted stock/ETF closes; current options-chain snapshots do not provide historical options fills. Signal diagnostics and selected-universe simulations do not remove survivorship or research-selection bias.
+
+The [EGM review and test record](docs/reviews/backtest-egm/REVIEW_REPORT.md) traces fresh-context findings to regression tests and repairs, with final browser/export and startup evidence.

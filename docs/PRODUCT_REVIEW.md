@@ -11,11 +11,12 @@ The product's strongest existing component is Smart Money Radar: small thematic 
 | Area | Responsibility |
 | --- | --- |
 | `streamlit_app.py`, `1_💼_Portfolio_Pulse.py` | Equivalent entrypoints calling one router. |
-| `common/navigation.py` | Registry of 11 dashboards in six asset classes; renders Equities — Linear first and expanded by default, with Portfolio Pulse as the landing page. Single-page categories remain direct parent links. Renders shared portfolio filters before dispatch. |
+| `common/navigation.py` | Registry of 12 dashboards in six asset classes; renders Equities — Linear first and expanded by default, with Portfolio Pulse as the landing page. Single-page categories remain direct parent links. Renders shared portfolio filters before dispatch. |
 | `common/sidebar.py` | Validated, explicitly applied ticker/date/benchmark/risk-free settings; session persistence; cache refresh. |
 | `common/data.py` | Cached Yahoo price and OHLCV adapters, conservative DuckDB fallback, snapshot benchmark and CSV reference access. |
 | `common/portfolio.py` | UI-independent weights, price alignment, wealth, performance/risk metrics, attribution, and dollar rebalance math. |
 | `common/optimization.py` | Long-only constrained optimization, fresh-solver fallback, comparable allocation estimates, and frontier points. |
+| `common/backtesting.py`, `common/research_ui.py` | Daily execution/cash simulation, costs, strategy targets, rolling allocation validation, signal diagnostics, research provenance and shared diagnostic presentation. See [Backtest research](BACKTEST_RESEARCH.md). |
 | `common/portfolio_ui.py` | Consistent data-state handling, headline metrics, growth charts, and methodology explanations. |
 | `common/presentation.py`, `assets/workspace.css` | Shared workspace branding, page headers, context chips, chart template, and responsive visual styling. |
 | `common/indices.py` | Parameterized historical membership queries, archive boundaries, and composition changes. |
@@ -76,7 +77,7 @@ Live Yahoo adjusted prices were separately fetched for AAPL and MSFT through the
 1. **Real holdings and a transaction ledger.** Add validated brokerage CSV import, quantities, cost basis, cash, dated trades and corporate actions before calling the model an account tracker. This enables money-weighted and time-weighted account returns and drift-based rebalancing.
 2. **Saved workspaces.** Add deliberate persistence and restore/export for portfolio definitions, benchmark choices and research watchlists; define identity and storage ownership before introducing multi-user accounts.
 3. **Provider observability.** Preserve per-symbol retrieval status, adjustment metadata, timestamps and short-lived failure caching. Offer source-specific retry controls and separate outage diagnostics from “no history.”
-4. **More defensible allocation estimates.** Add shrinkage covariance, return-estimation choices, turnover/cost penalties and walk-forward validation. Current frontier and optimized weights remain in-sample estimates.
+4. **More defensible allocation estimates.** Add shrinkage covariance, return-estimation choices and turnover/cost penalties. The frontier and single-window target remain in-sample estimates; the Forward validation tab now re-estimates each allocation on earlier observations and tests later returns with costs.
 5. **Point-in-time research data.** Refresh and version membership/reference snapshots, include delisted securities and cash treatment, and distinguish survivorship bias from a genuine historical index backtest.
 6. **Cross-asset methodology pass.** Crypto still has its own 365-day risk implementation; mixed-calendar correlations and futures contract rolls need explicit conventions before their metrics can share the equity engine. Rates are quoted yield indices rather than bond total returns.
 7. **Options market conventions.** Parameterize the hardcoded risk-free rate, expiry time zone and contract settlement time; validate selected-index option availability and explain the limits of Black–Scholes Greeks for each source.
