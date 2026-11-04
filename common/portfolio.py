@@ -12,6 +12,8 @@ import re
 import numpy as np
 import pandas as pd
 
+from common.price_history import clean_prices, normalize_observation_dates
+
 TRADING_DAYS = 252
 DEFAULT_SYMBOLS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"]
 
@@ -43,23 +45,6 @@ def normalized_weights(symbols, weights=None):
     if not np.isclose(w.sum(), 1, atol=1e-4, rtol=0):
         raise ValueError(f"Allocations must total 100% (currently {w.sum():.2%}).")
     return w / w.sum()
-
-
-def normalize_observation_dates(frame):
-    """Use unique UTC calendar labels; reject missing dates and keep the last duplicate."""
-    frame = frame.copy()
-    frame.index = pd.to_datetime(frame.index, utc=True).tz_convert(None).normalize()
-    if frame.index.hasnans:
-        raise ValueError("Every observation needs a valid date.")
-    frame = frame.loc[~frame.index.duplicated(keep="last")].sort_index()
-    return frame
-
-
-def clean_prices(prices):
-    """Positive numeric prices on unique, sorted, timezone-free dates."""
-    frame = normalize_observation_dates(prices)
-    frame = frame.apply(pd.to_numeric, errors="coerce")
-    return frame.where(np.isfinite(frame) & (frame > 0))
 
 
 def wealth_index(returns):

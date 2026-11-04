@@ -38,3 +38,8 @@ The simulator remains daily, long-only and based on synthetic fractional adjuste
 - Chromium at 1440×1100 and 390×844: optimizer handoff -> Performance -> Backtest retained the exact run; submitted a trend strategy; changing to two tickers invalidated the old candidate; saved a second run; explicitly selected the first saved run; downloaded original price/equity/execution CSVs; verified downloaded original-price SHA-256 against its recipe after the active universe changed; opened signal charts; no browser exceptions or mobile horizontal overflow.
 - Browser data was deterministic. These checks exercise real UI controls and download bytes, without claiming provider uptime or live execution accuracy.
 - `git diff --check` passed. Engine version advanced to 1.1 because accounting/normalization semantics changed.
+
+
+## Deployment follow-up
+
+The reported Streamlit Cloud import failure exposed a cached-module update path outside the initial fresh-process checks. See [the reproduction, fix and Python 3.13 verification](CLOUD_IMPORT_FIX.md). Five new regressions now cover that path through both app entrypoints.

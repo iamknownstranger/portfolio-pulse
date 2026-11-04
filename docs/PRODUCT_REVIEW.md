@@ -14,6 +14,7 @@ The product's strongest existing component is Smart Money Radar: small thematic 
 | `common/navigation.py` | Registry of 12 dashboards in six asset classes; renders Equities — Linear first and expanded by default, with Portfolio Pulse as the landing page. Single-page categories remain direct parent links. Renders shared portfolio filters before dispatch. |
 | `common/sidebar.py` | Validated, explicitly applied ticker/date/benchmark/risk-free settings; session persistence; cache refresh. |
 | `common/data.py` | Cached Yahoo price and OHLCV adapters, conservative DuckDB fallback, snapshot benchmark and CSV reference access. |
+| `common/price_history.py` | Shared UTC-calendar normalization and numeric price cleaning, imported directly by both calculation engines. |
 | `common/portfolio.py` | UI-independent weights, price alignment, wealth, performance/risk metrics, attribution, and dollar rebalance math. |
 | `common/optimization.py` | Long-only constrained optimization, fresh-solver fallback, comparable allocation estimates, and frontier points. |
 | `common/backtesting.py`, `common/research_ui.py` | Daily execution/cash simulation, costs, strategy targets, rolling allocation validation, signal diagnostics, research provenance and shared diagnostic presentation. See [Backtest research](BACKTEST_RESEARCH.md). |

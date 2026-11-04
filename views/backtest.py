@@ -10,7 +10,8 @@ import streamlit as st
 
 from common.data import get_benchmark_data
 from common.backtesting import (BacktestConfig, FREQUENCIES, STRATEGIES, run_backtest, run_manifest)
-from common.portfolio import clean_prices, compare_with_benchmark, drawdowns
+from common.portfolio import compare_with_benchmark, drawdowns
+from common.price_history import clean_prices
 from common.portfolio_ui import format_value, growth_chart, load_portfolio
 from common.presentation import page_header
 from common.research_ui import render_drawdown_episodes, render_signal_research, render_validation
